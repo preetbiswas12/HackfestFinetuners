@@ -97,9 +97,9 @@ def apply_heuristics(chunk: dict) -> Optional[str]:
         return "noise"
         
     # Compound Discard Rule:
-    # If short (< 15 words) AND contains meeting/scheduling keywords -> Noise
-    # This catches "Let's meet Tuesday at 2pm" but allows "Tuesday deadline for phase 1"
-    if word_count < 15 and _MEETING_SCHEDULING.search(text):
+    # If it contains meeting/scheduling keywords -> Noise (regardless of length)
+    # UNLESS it contains project deadlines.
+    if _MEETING_SCHEDULING.search(text):
         # Double check it's NOT a project deadline
         if not _PROJECT_TIMELINE.search(text):
             return "noise"
@@ -209,14 +209,14 @@ def classify_with_llm(chunk: dict, client: Groq) -> dict:
 def apply_confidence_threshold(result: dict) -> dict:
     """
     Adjust suppression and review flags based on confidence score.
-    ≥ 0.85  → accept automatically
-    0.60–0.84 → accept but flag for review
+    ≥ 0.75  → accept automatically
+    0.60–0.74 → accept but flag for review
     < 0.60  → force to noise, always flag for review
     """
     confidence = result["confidence"]
     result["flagged_for_review"] = False
 
-    if confidence >= 0.85:
+    if confidence >= 0.75:
         pass  # auto-accept
     elif confidence >= 0.60:
         result["flagged_for_review"] = True

@@ -25,7 +25,7 @@ from enron_parser import parse_to_chunks
 # ---------------------------------------------------------------------------
 
 CSV_PATH = _HERE / "emails.csv" / "emails.csv"
-N_EMAILS = 50  # number of emails to process in demo mode
+N_EMAILS = 200  # number of emails to process in demo mode
 
 
 def main():
@@ -36,7 +36,24 @@ def main():
 
     print(f"Loading and parsing {N_EMAILS} emails from Enron dataset...")
     chunks = parse_to_chunks(CSV_PATH, n=N_EMAILS)
-    print(f"  → {len(chunks)} chunks after parsing and thread flattening\n")
+    
+    # -----------------------------------------------------------------------
+    # Content-Level Deduplication
+    # -----------------------------------------------------------------------
+    import hashlib
+    seen_hashes = set()
+    unique_chunks = []
+    for c in chunks:
+        # Hash the cleaned text to identify duplicate content regardless of email wrappings
+        content_hash = hashlib.md5(c["cleaned_text"].encode("utf-8")).hexdigest()
+        if content_hash not in seen_hashes:
+            seen_hashes.add(content_hash)
+            unique_chunks.append(c)
+    
+    print(f"  → {len(chunks)} raw chunks parsed")
+    print(f"  → {len(unique_chunks)} unique chunks after content deduplication\n")
+    chunks = unique_chunks
+    # -----------------------------------------------------------------------
 
     print("Classifying chunks...")
     classified = classify_chunks(chunks, api_key=api_key)

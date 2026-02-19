@@ -27,8 +27,10 @@ Definitions:
    - INCLUDE: "The system must support SSO", "Users need to filter by date", "We need a dashboard for sales".
    - EXCLUDE: General business requests ("Send me the report"), internal admin ("Please cc me"), scheduling ("Can we meet?"), or HR data requests ("Send salary info"). These are NOISE.
    - EXCLUDE: "I need access to the folder" (Support request -> Noise).
+   - EXCLUDE: IT support tickets, network configuration details, access credentials, or infrastructure setup instructions shared between colleagues. These are NOISE.
 2. decision: A clear, finalized choice about the project direction, design, or scope. (e.g., "We will use AWS.", "Approved.")
 3. stakeholder_feedback: Opinions, preferences, or complaints from users/stakeholders about the *project* or *product*.
+   - EXCLUDE: Personal opinions about business practices, travel, or general work culture (e.g., "Business travel is tiring") that have no connection to the system being built. These are NOISE.
 4. timeline_reference: Explicit dates/milestones for *project delivery* or *phases*.
    - EXCLUDE: Meeting scheduling ("Let's meet Tuesday at 2pm"), personal deadlines ("I'm out Friday"), or general calendar chatter. These are NOISE.
 5. noise: Anything that does not fit the above. Greeting, signatures, admin, scheduling, small talk.
