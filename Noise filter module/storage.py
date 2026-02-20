@@ -16,6 +16,8 @@ from schema import ClassifiedChunk, SignalLabel
 
 from dotenv import load_dotenv
 from pathlib import Path
+import uuid
+from datetime import datetime, timezone
 
 # Load .env from the same directory as this script
 _HERE = Path(__file__).parent
@@ -63,6 +65,48 @@ def init_db():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_classified_chunks_session ON classified_chunks(session_id);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_classified_chunks_source_ref ON classified_chunks(source_ref);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_classified_chunks_flagged ON classified_chunks(flagged_for_review);")
+            
+            # BRD Pipeline Tables
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS brd_snapshots (
+                    snapshot_id UUID PRIMARY KEY,
+                    session_id VARCHAR(255),
+                    created_at TIMESTAMP WITH TIME ZONE,
+                    chunk_ids JSONB
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS brd_sections (
+                    section_id UUID PRIMARY KEY,
+                    session_id VARCHAR(255),
+                    snapshot_id UUID,
+                    section_name VARCHAR(100),
+                    version_number INTEGER DEFAULT 1,
+                    content TEXT,
+                    source_chunk_ids JSONB,
+                    is_locked BOOLEAN DEFAULT FALSE,
+                    human_edited BOOLEAN DEFAULT FALSE,
+                    generated_at TIMESTAMP WITH TIME ZONE,
+                    data JSONB
+                );
+            """)
+            
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS brd_validation_flags (
+                    flag_id UUID PRIMARY KEY,
+                    session_id VARCHAR(255),
+                    section_name VARCHAR(100),
+                    flag_type VARCHAR(50),
+                    description TEXT,
+                    severity VARCHAR(20),
+                    auto_resolvable BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP WITH TIME ZONE
+                );
+            """)
+            
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_brd_sections_session ON brd_sections(session_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_brd_snapshots_session ON brd_snapshots(session_id);")
             
         conn.commit()
     finally:
@@ -163,3 +207,105 @@ def restore_noise_item(chunk_id: str):
         conn.commit()
     finally:
         conn.close()
+
+def create_snapshot(session_id: str) -> str:
+    """
+    Creates a frozen snapshot of all active signals from AKS via get_active_signals().
+    Records their chunk IDs in brd_snapshots and returns the snapshot_id.
+    """
+    snapshot_id = str(uuid.uuid4())
+    active_signals = get_active_signals()
+    
+    # Optionally filter by session_id if dealing with multiple sessions
+    chunk_ids = [c.chunk_id for c in active_signals if getattr(c, 'session_id', None) == session_id or c.session_id == 'default_session']
+    
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO brd_snapshots (snapshot_id, session_id, created_at, chunk_ids)
+                VALUES (%s, %s, %s, %s)
+            """, (snapshot_id, session_id, datetime.now(timezone.utc), json.dumps(chunk_ids)))
+        conn.commit()
+    finally:
+        conn.close()
+        
+    return snapshot_id
+
+def get_signals_for_snapshot(snapshot_id: str, label_filter: str = None) -> List[ClassifiedChunk]:
+    """
+    Queries AKS for chunks whose IDs are in the snapshot's chunk_ids array,
+    optionally filtered by label.
+    """
+    conn = get_connection()
+    results = []
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT chunk_ids FROM brd_snapshots WHERE snapshot_id = %s", (snapshot_id,))
+            row = cur.fetchone()
+            if not row or not row['chunk_ids']:
+                return []
+                
+            chunk_ids = row['chunk_ids']
+            if not chunk_ids:
+                return []
+                
+            query = "SELECT data FROM classified_chunks WHERE chunk_id = ANY(%s::uuid[])"
+            params = [chunk_ids]
+            
+            if label_filter:
+                query += " AND label = %s"
+                params.append(label_filter)
+                
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            for r in rows:
+                results.append(ClassifiedChunk.model_validate(r['data']))
+    finally:
+        conn.close()
+    return results
+
+def store_brd_section(session_id: str, snapshot_id: str, section_name: str, content: str, source_chunk_ids: List[str]):
+    """Stores a generated BRD section with automatic version incrementing."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            # Get next version number
+            cur.execute("""
+                SELECT COALESCE(MAX(version_number), 0) + 1 
+                FROM brd_sections 
+                WHERE session_id = %s AND section_name = %s
+            """, (session_id, section_name))
+            version_row = cur.fetchone()
+            version_number = version_row[0] if version_row else 1
+            
+            section_id = str(uuid.uuid4())
+            cur.execute("""
+                INSERT INTO brd_sections (
+                    section_id, session_id, snapshot_id, section_name, 
+                    version_number, content, source_chunk_ids, generated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (section_id, session_id, snapshot_id, section_name, version_number, content, json.dumps(source_chunk_ids), datetime.now(timezone.utc)))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_latest_brd_sections(session_id: str) -> Dict[str, str]:
+    """Returns the latest generated content for each section name in a session."""
+    conn = get_connection()
+    sections = {}
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT section_name, content 
+                FROM brd_sections 
+                WHERE session_id = %s
+                ORDER BY version_number DESC
+            """, (session_id,))
+            rows = cur.fetchall()
+            for r in rows:
+                if r['section_name'] not in sections:
+                    sections[r['section_name']] = r['content']
+    finally:
+        conn.close()
+    return sections

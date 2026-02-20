@@ -132,9 +132,21 @@ def main():
     classified = classify_chunks(chunks, api_key=api_key)
     print(f"  → Done. {len(classified)} chunks classified.\n")
     
+    # --- Integration Point for BRD Pipeline ---
+    import uuid
+    
+    print("\n--- Saving Chunks for BRD Pipeline ---")
+    session_id = str(uuid.uuid4())
+    
+    # Update the stored chunks with the generated session ID so they belong to this run
+    for c in classified:
+        c.session_id = session_id
+        
     print("Writing chunks to AKS Database...")
     store_chunks(classified)
-    print("  → Done. Chunks saved to PostgreSQL.\n")
+    print(f"  → Done. Stored {len(classified)} chunks to DB for session {session_id}\n")
+    print(f"To run the BRD generation, switch to the 'brd Module' folder and run:\n  python main.py {session_id}\n")
+    # --- End Integration Point ---
 
     print_pipeline_breakdown(classified)
     print_confidence_distribution(classified)
