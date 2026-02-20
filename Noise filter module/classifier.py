@@ -42,17 +42,24 @@ _PROJECT_TIMELINE = re.compile(
     re.IGNORECASE,
 )
 
-# Pure meeting/scheduling noise
-_MEETING_SCHEDULING = re.compile(
+# Pure meeting/scheduling noise (Strict - always noise)
+_STRICT_MEETING = re.compile(
+    r"(?:dial-in\b|"
+    r"webex\b|"
+    r"zoom\b|"
+    r"lunch\b|"
+    r"room \d+|"
+    r"conference room|"
+    r"calendar invite)",
+    re.IGNORECASE,
+)
+
+# Context-dependent meeting words (Noise ONLY if short/no content)
+_WEAK_MEETING = re.compile(
     r"(?:meeting\b|"
     r"schedule\b|"
     r"calendar\b|"
     r"invite\b|"
-    r"room\b|"
-    r"dial-in\b|"
-    r"webex\b|"
-    r"zoom\b|"
-    r"lunch\b|"
     r"\b(?:monday|tuesday|wednesday|thursday|friday)\b(?!\s+(?:deadline|launch))|" 
     r"\bat \d{1,2}(?::\d{2})?\s*(?:am|pm)?\b)", # at 2pm
     re.IGNORECASE,
@@ -96,21 +103,24 @@ def apply_heuristics(chunk: dict) -> Optional[str]:
     if word_count < 10 and _SOCIAL_NOISE.match(text.strip()):
         return "noise"
         
-    # Compound Discard Rule:
-    # If it contains meeting/scheduling keywords -> Noise (regardless of length)
-    # UNLESS it contains project deadlines.
-    if _MEETING_SCHEDULING.search(text):
-        # Double check it's NOT a project deadline
-        if not _PROJECT_TIMELINE.search(text):
+    # Strict Meeting patterns -> Always Noise (e.g. "dial-in details")
+    if _STRICT_MEETING.search(text):
+         if not _PROJECT_TIMELINE.search(text):
             return "noise"
+
+    # Weak Meeting patterns -> Noise ONLY if short (< 50 words)
+    # This prevents killing "Let's discuss the requirements in the meeting on Monday..."
+    if _WEAK_MEETING.search(text):
+        if word_count < 50:
+            # Double check it's NOT a project deadline
+            if not _PROJECT_TIMELINE.search(text):
+                return "noise"
 
     # Ultra-short junk
     if word_count < _MIN_WORD_COUNT:
         return "noise"
 
-    # Calendar / meeting invite → NOISE (unless it has "deadline")
-    # Old logic mapped this to timeline. New logic maps pure scheduling to noise.
-    # We only auto-classify timeline if it matches _PROJECT_TIMELINE
+    # Project deadlines -> Timeline
     if _PROJECT_TIMELINE.search(text):
         return "timeline_reference"
 
@@ -138,7 +148,7 @@ def classify_with_llm(chunk: dict, client: Groq) -> dict:
     # We must ensure the system prompt or user prompt explicitly asks for JSON (which it does).
     
     # Model specified by user
-    MODEL_NAME = "meta-llama/llama-4-maverick-17b-128e-instruct" # Or fallback to generic llama3 if needed
+    MODEL_NAME = "llama-3.3-70b-versatile" # Or fallback to generic llama3 if needed
 
     for attempt in range(2):
         try:
@@ -210,21 +220,36 @@ def apply_confidence_threshold(result: dict) -> dict:
     """
     Adjust suppression and review flags based on confidence score.
     ≥ 0.75  → accept automatically
-    0.60–0.74 → accept but flag for review
-    < 0.60  → force to noise, always flag for review
+    0.65–0.74 → accept but flag for review
+    < 0.65  → force to noise, always flag for review
     """
     confidence = result["confidence"]
     result["flagged_for_review"] = False
 
     if confidence >= 0.75:
         pass  # auto-accept
-    elif confidence >= 0.60:
+    elif confidence >= 0.65:
         result["flagged_for_review"] = True
     else:
         result["label"] = "noise"
         result["flagged_for_review"] = True
 
     return result
+
+
+SIGNAL_NOUNS = {
+    "system", "feature", "requirement", "dashboard",
+    "report", "integration", "api", "database", "screen",
+    "interface", "application", "platform", "module",
+    "workflow", "process", "user", "access", "permission",
+    "security", "compliance", "performance", "audit",
+    "position", "model", "tool", "data", "pipeline",
+    "implementation", "design", "architecture", "service"
+}
+
+def has_signal_nouns(text: str) -> bool:
+    words = set(text.lower().split())
+    return bool(words & SIGNAL_NOUNS)
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +274,14 @@ def classify_chunks(chunks: list[dict], api_key: str) -> list[ClassifiedChunk]:
                 "label": heuristic_label,
                 "confidence": 1.0,
                 "reasoning": "Classified by heuristic rule.",
+                "flagged_for_review": False,
+            }
+        elif not has_signal_nouns(chunk.get("cleaned_text", "")):
+            # no signal nouns present — noise without LLM call
+            result = {
+                "label": "noise",
+                "confidence": 1.0,
+                "reasoning": "No project-relevant domain terms detected.",
                 "flagged_for_review": False,
             }
         else:

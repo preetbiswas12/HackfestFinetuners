@@ -78,6 +78,7 @@ def main():
     print("=" * 50)
 
     # Show a few signal examples
+    # Show a few signal examples
     signals = [c for c in classified if not c.suppressed]
     if signals:
         print("\nSample signals extracted:")
@@ -86,6 +87,17 @@ def main():
             print(f"  Speaker: {c.speaker}")
             print(f"  Text: {c.cleaned_text[:200]}")
             print(f"  Reason: {c.reasoning}")
+            
+    # Explicitly print all stakeholder feedback for verification
+    feedback_items = [c for c in classified if c.label.value == "stakeholder_feedback"]
+    if feedback_items:
+        print(f"\n\n*** STAKEHOLDER FEEDBACK AUDIT ({len(feedback_items)} items) ***")
+        for i, c in enumerate(feedback_items, 1):
+            print(f"\n--- Item {i} ---")
+            print(f"Speaker: {c.speaker}")
+            print(f"Conf: {c.confidence:.2f}")
+            print(f"Reason: {c.reasoning}")
+            print(f"Text:\n{c.cleaned_text}\n")
 
 
 if __name__ == "__main__":

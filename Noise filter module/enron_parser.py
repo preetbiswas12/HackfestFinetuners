@@ -40,12 +40,6 @@ _TIMESTAMP_DIVIDER = re.compile(
     re.MULTILINE | re.IGNORECASE
 )
 
-# "First Last \n Date Time \n To: ..." block
-_FORWARDED_BLOCK = re.compile(
-    r"^\s*[A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+.*?\n\s*\d{1,2}/\d{1,2}/\d{4}.*?\n\s*To:.*?(?:\n\s*[Cc]c:.*?)?\n",
-    re.MULTILINE | re.IGNORECASE | re.DOTALL
-)
-
 _EXCESS_WHITESPACE = re.compile(r"\n{3,}")
 
 
@@ -54,7 +48,6 @@ def strip_boilerplate(text: str) -> str:
     if not isinstance(text, str):
         return ""
     text = _FORWARDED_HEADER.sub("", text)
-    text = _FORWARDED_BLOCK.sub("", text)
     text = _TIMESTAMP_DIVIDER.sub("", text)
     text = _DISCLAIMER.sub("", text)
     text = _SIGNATURE_DIVIDER.sub("", text)

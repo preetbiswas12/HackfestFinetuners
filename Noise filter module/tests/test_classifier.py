@@ -21,7 +21,7 @@ def test_classify_simple_sample():
 
     chunks = [
         {
-            "cleaned_text": "We must allow users to reset their password via email.",
+            "cleaned_text": "The new system feature must allow a user to reset their password via email.",
             "speaker": "Alice",
             "source_ref": "<test1>"
         },

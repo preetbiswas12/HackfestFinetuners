@@ -20,7 +20,7 @@ def test_system_mail_is_noise():
     assert apply_heuristics(chunk) == "noise"
 
 def test_calendar_invite_is_timeline():
-    chunk = {"cleaned_text": "You have been invited to a meeting: Project Synch", "speaker": "Calendar"}
+    chunk = {"cleaned_text": "You have been invited to a meeting for the phase 1 go-live", "speaker": "Calendar"}
     assert apply_heuristics(chunk) == "timeline_reference"
 
 def test_normal_text_returns_none():
