@@ -9,9 +9,29 @@ import json
 import os
 import re
 import time
+import logging
 from typing import Optional
 
 from groq import Groq, APIConnectionError, RateLimitError, APIStatusError
+
+logging.basicConfig(
+    filename="pipeline_debug.log",
+    level=logging.DEBUG,
+    format="%(asctime)s | %(message)s"
+)
+
+def log_chunk_decision(chunk, path, label, confidence, reasoning):
+    logging.debug(
+        f"\n{'='*60}"
+        f"\nPATH: {path}"
+        f"\nSPEAKER: {chunk.get('speaker', 'Unknown')}"
+        f"\nSOURCE: {chunk.get('source_ref', '')}"
+        f"\nTEXT: {chunk.get('cleaned_text', '')[:150]}"
+        f"\nLABEL: {label}"
+        f"\nCONFIDENCE: {confidence}"
+        f"\nREASONING: {reasoning}"
+        f"\n{'='*60}"
+    )
 
 from prompts import build_classification_prompt, VALID_LABELS
 from schema import ClassifiedChunk, SignalLabel
@@ -148,7 +168,7 @@ def classify_with_llm(chunk: dict, client: Groq) -> dict:
     # We must ensure the system prompt or user prompt explicitly asks for JSON (which it does).
     
     # Model specified by user
-    MODEL_NAME = "llama-3.3-70b-versatile" # Or fallback to generic llama3 if needed
+    MODEL_NAME = "meta-llama/llama-4-maverick-17b-128e-instruct" # Or fallback to generic llama3 if needed
 
     for attempt in range(2):
         try:
@@ -270,6 +290,7 @@ def classify_chunks(chunks: list[dict], api_key: str) -> list[ClassifiedChunk]:
         heuristic_label = apply_heuristics(chunk)
 
         if heuristic_label is not None:
+            log_chunk_decision(chunk, "HEURISTIC", heuristic_label, 1.0, "Heuristic rule matched")
             result = {
                 "label": heuristic_label,
                 "confidence": 1.0,
@@ -278,6 +299,7 @@ def classify_chunks(chunks: list[dict], api_key: str) -> list[ClassifiedChunk]:
             }
         elif not has_signal_nouns(chunk.get("cleaned_text", "")):
             # no signal nouns present — noise without LLM call
+            log_chunk_decision(chunk, "DOMAIN_GATE", "noise", 1.0, "No signal nouns found")
             result = {
                 "label": "noise",
                 "confidence": 1.0,
@@ -289,6 +311,7 @@ def classify_chunks(chunks: list[dict], api_key: str) -> list[ClassifiedChunk]:
             result = classify_with_llm(chunk, client)
             # Step 3: confidence threshold
             result = apply_confidence_threshold(result)
+            log_chunk_decision(chunk, "LLM", result["label"], result["confidence"], result["reasoning"])
 
         classified = ClassifiedChunk(
             source_ref=chunk.get("source_ref", ""),

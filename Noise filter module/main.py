@@ -27,6 +27,76 @@ from enron_parser import parse_to_chunks
 CSV_PATH = _HERE / "emails.csv" / "emails.csv"
 N_EMAILS = 200  # number of emails to process in demo mode
 
+def print_confidence_distribution(classified):
+    llm_items = [c for c in classified 
+                 if c.reasoning != "Classified by heuristic rule." 
+                 and c.reasoning != "No project-relevant domain terms detected."]
+    
+    if not llm_items:
+        print("No LLM-classified items found.")
+        return
+        
+    confidences = [c.confidence for c in llm_items]
+    
+    bands = {
+        "0.90-1.00 (auto-accept)": 0,
+        "0.75-0.89 (auto-accept)": 0,
+        "0.65-0.74 (flagged)":     0,
+        "0.00-0.64 (forced noise)": 0,
+    }
+    
+    for conf in confidences:
+        if conf >= 0.90:
+            bands["0.90-1.00 (auto-accept)"] += 1
+        elif conf >= 0.75:
+            bands["0.75-0.89 (auto-accept)"] += 1
+        elif conf >= 0.65:
+            bands["0.65-0.74 (flagged)"] += 1
+        else:
+            bands["0.00-0.64 (forced noise)"] += 1
+    
+    print("\n--- LLM CONFIDENCE DISTRIBUTION ---")
+    for band, count in bands.items():
+        bar = "█" * count
+        print(f"  {band:<35} {count:>4}  {bar}")
+    print(f"  Total LLM calls: {len(llm_items)}")
+    print(f"  Mean confidence: {sum(confidences)/len(confidences):.3f}")
+
+def print_pipeline_breakdown(classified):
+    heuristic = [c for c in classified 
+                 if c.reasoning == "Classified by heuristic rule."]
+    domain_gate = [c for c in classified 
+                   if c.reasoning == "No project-relevant domain terms detected."]
+    llm_path = [c for c in classified 
+                if c not in heuristic and c not in domain_gate]
+    
+    print("\n--- PIPELINE PATH BREAKDOWN ---")
+    print(f"  Heuristic (fast path):     {len(heuristic):>4}")
+    print(f"  Domain gate (pre-LLM):     {len(domain_gate):>4}")
+    print(f"  LLM classified:            {len(llm_path):>4}")
+    print(f"  └─ Auto-accepted:          {sum(1 for c in llm_path if not c.flagged_for_review and not c.suppressed):>4}")
+    print(f"  └─ Flagged for review:     {sum(1 for c in llm_path if c.flagged_for_review):>4}")
+    print(f"  └─ Forced to noise:        {sum(1 for c in llm_path if c.suppressed and c.confidence < 0.65):>4}")
+
+def inspect_flagged_items(classified):
+    flagged = [c for c in classified if c.flagged_for_review]
+    if not flagged:
+        print("\nNo flagged items.")
+        return
+    
+    print(f"\n--- FLAGGED ITEMS INSPECTOR ({len(flagged)} items) ---")
+    
+    # Group by label
+    by_label = {}
+    for c in flagged:
+        by_label.setdefault(c.label.value, []).append(c)
+    
+    for label, items in by_label.items():
+        print(f"\n  [{label.upper()}] — {len(items)} flagged")
+        for c in items[:3]:  # show first 3 per label
+            print(f"    Conf: {c.confidence:.2f} | {c.cleaned_text[:100]}")
+            print(f"    Reason: {c.reasoning}")
+
 
 def main():
     api_key = os.getenv("GROQ_CLOUD_API")
@@ -58,6 +128,10 @@ def main():
     print("Classifying chunks...")
     classified = classify_chunks(chunks, api_key=api_key)
     print(f"  → Done. {len(classified)} chunks classified.\n")
+
+    print_pipeline_breakdown(classified)
+    print_confidence_distribution(classified)
+    inspect_flagged_items(classified)
 
     # Summary table
     label_counts = Counter(c.label.value for c in classified)
@@ -98,6 +172,15 @@ def main():
             print(f"Conf: {c.confidence:.2f}")
             print(f"Reason: {c.reasoning}")
             print(f"Text:\n{c.cleaned_text}\n")
+
+    # TEMPORARY DEBUG — remove before demo
+    print("\n\n=== DEBUG: SAMPLE OF FLAGGED ITEMS ===")
+    flagged = [c for c in classified if c.flagged_for_review]
+    for c in flagged[:10]:
+        print(f"\nLabel: {c.label.value} | Conf: {c.confidence:.2f}")
+        print(f"Text: {c.cleaned_text[:200]}")
+        print(f"Reasoning: {c.reasoning}")
+        print(f"Speaker: {c.speaker}")
 
 
 if __name__ == "__main__":
