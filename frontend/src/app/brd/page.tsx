@@ -210,12 +210,12 @@ export default function BRDPage() {
 
     // Build a minimal Board object for the ShareBoardModal
     const activeSession = sessions?.find(s => s.id === sessionId);
-    const boardForShare: Board | null = user && sessionId ? {
+    const boardForShare: Board | null = activeSession && sessionId ? {
         id: sessionId,
-        title: activeSession?.name ?? 'Untitled BRD',
-        description: '',
-        ownerUid: user.uid,
-        status: 'draft',
+        title: activeSession.name ?? 'Untitled BRD',
+        description: activeSession.description ?? '',
+        ownerUid: activeSession.role === 'owner' ? (user?.uid ?? '') : 'shared', // 'shared' indicates we don't know the owner Uid but it's not us
+        status: activeSession.status ?? 'draft',
         createdAt: new Date() as unknown as import('firebase/firestore').Timestamp,
         updatedAt: new Date() as unknown as import('firebase/firestore').Timestamp,
     } : null;

@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { createInvite } from '@/lib/firestore/sharing';
 import { getBoardMembers, removeMember, setMemberRole, ensureBoardExists, type Board, type BoardMember, type MemberRole } from '@/lib/firestore/boards';
 import { getUser } from '@/lib/firestore/users';
-import { X, Copy, Check, Link2, Loader2, Crown, Pencil, Eye, Trash2 } from 'lucide-react';
+import { X, Copy, Check, Link2, Loader2, Crown, Pencil, Eye, Trash2, AlertTriangle } from 'lucide-react';
 
 
 interface ShareBoardModalProps {
@@ -38,6 +38,7 @@ export function ShareBoardModal({ board, isOpen, onClose }: ShareBoardModalProps
     const [generating, setGenerating] = useState(false);
     const [members, setMembers] = useState<MemberDisplay[]>([]);
     const [loadingMembers, setLoadingMembers] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     const isOwner = board.ownerUid === user?.uid;
 
@@ -48,12 +49,14 @@ export function ShareBoardModal({ board, isOpen, onClose }: ShareBoardModalProps
 
         const init = async () => {
             try {
-                // Ensure the board doc + owner member exist in Firestore (idempotent)
-                await ensureBoardExists(board.id, user.uid, {
-                    title: board.title,
-                    description: board.description,
-                    status: board.status,
-                });
+                // Only the owner should ensure the board exists in Firestore (to avoid permission errors for others)
+                if (isOwner) {
+                    await ensureBoardExists(board.id, user.uid, {
+                        title: board.title,
+                        description: board.description,
+                        status: board.status,
+                    });
+                }
 
                 const rawMembers = await getBoardMembers(board.id);
                 const withNames = await Promise.all(
@@ -108,8 +111,13 @@ export function ShareBoardModal({ board, isOpen, onClose }: ShareBoardModalProps
     };
 
     const handleRemove = async (uid: string) => {
-        await removeMember(board.id, uid);
-        setMembers((prev) => prev.filter((m) => m.uid !== uid));
+        setError(null);
+        try {
+            await removeMember(board.id, uid);
+            setMembers((prev) => prev.filter((m) => m.uid !== uid));
+        } catch (err) {
+            setError('Failed to remove member. You may not have permission.');
+        }
     };
 
     if (!isOpen) return null;
@@ -124,9 +132,20 @@ export function ShareBoardModal({ board, isOpen, onClose }: ShareBoardModalProps
 
             {/* Modal */}
             <div
-                className="relative w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl"
+                className="relative w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl overflow-hidden"
                 style={{ background: 'rgba(12,12,12,0.98)' }}
             >
+                {/* Error Banner */}
+                {error && (
+                    <div className="bg-red-500/10 border-b border-red-500/20 px-6 py-2.5 flex items-center gap-2">
+                        <AlertTriangle size={14} className="text-red-400" />
+                        <span className="text-xs text-red-300">{error}</span>
+                        <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-300">
+                            <X size={14} />
+                        </button>
+                    </div>
+                )}
+
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-white/8">
                     <div>

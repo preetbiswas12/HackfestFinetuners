@@ -194,7 +194,7 @@ def get_brd(session_id: str, format: str = "html"):
             )
         sections = html_sections
 
-    conn = get_connection()
+    conn, _ = get_connection()
     flags = []
     try:
         with conn.cursor() as cur:
