@@ -4,7 +4,7 @@ Compiles the latest version of all BRD sections into a single Markdown document,
 including a section for Validation Flags. Supports Markdown, PDF, and DOCX export
 with template-based formatting for DOCX.
 """
-from storage import get_latest_brd_sections, get_connection
+from brd_module.storage import get_latest_brd_sections, get_connection
 from datetime import datetime, timezone
 import markdown
 import re
