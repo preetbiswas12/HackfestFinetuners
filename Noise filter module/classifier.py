@@ -276,11 +276,13 @@ def has_signal_nouns(text: str) -> bool:
 # Main orchestrator
 # ---------------------------------------------------------------------------
 
-def classify_chunks(chunks: list[dict], api_key: str) -> list[ClassifiedChunk]:
+def classify_chunks(chunks: list[dict], api_key: str, log_fn=None) -> list[ClassifiedChunk]:
     """
     Classify a list of raw chunk dicts.
     Returns a list of ClassifiedChunk objects.
+    Accepts optional log_fn(msg) for streaming progress.
     """
+    _log = log_fn or (lambda msg: print(msg))
     client = Groq(api_key=api_key)
 
     results: list[ClassifiedChunk] = []
@@ -329,7 +331,9 @@ def classify_chunks(chunks: list[dict], api_key: str) -> list[ClassifiedChunk]:
         if heuristic_label is None:
             time.sleep(0.2) 
 
-        if (i + 1) % 10 == 0:
-            print(f"  Classified {i + 1}/{len(chunks)} chunks...")
+        if (i + 1) % 5 == 0:
+            last = results[-1]
+            path = "LLM" if heuristic_label is None else "HEUR"
+            _log(f"  [{i+1:>3}/{len(chunks)}] [{path}] → {last.label.value:<22} conf:{last.confidence:.2f}  {last.source_ref[:45]}")
 
     return results

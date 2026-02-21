@@ -149,17 +149,24 @@ def store_chunks(chunks: List[ClassifiedChunk]):
     finally:
         conn.close()
 
-def get_active_signals() -> List[ClassifiedChunk]:
-    """Retrieves all chunks that are either true signals or were manually restored from noise."""
+def get_active_signals(session_id: str = None) -> List[ClassifiedChunk]:
+    """Retrieves active signals, optionally filtered by session_id at DB level."""
     conn = get_connection()
     results = []
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
-                SELECT data FROM classified_chunks 
-                WHERE suppressed = FALSE OR manually_restored = TRUE
-                ORDER BY created_at ASC;
-            """)
+            if session_id:
+                cur.execute("""
+                    SELECT data FROM classified_chunks 
+                    WHERE session_id = %s AND (suppressed = FALSE OR manually_restored = TRUE)
+                    ORDER BY created_at ASC;
+                """, (session_id,))
+            else:
+                cur.execute("""
+                    SELECT data FROM classified_chunks 
+                    WHERE suppressed = FALSE OR manually_restored = TRUE
+                    ORDER BY created_at ASC;
+                """)
             rows = cur.fetchall()
             for row in rows:
                 results.append(ClassifiedChunk.model_validate(row['data']))
@@ -167,17 +174,24 @@ def get_active_signals() -> List[ClassifiedChunk]:
         conn.close()
     return results
 
-def get_noise_items() -> List[ClassifiedChunk]:
-    """Retrieves chunks that are suppressed (noise) and haven't been manually restored."""
+def get_noise_items(session_id: str = None) -> List[ClassifiedChunk]:
+    """Retrieves noise chunks, optionally filtered by session_id at DB level."""
     conn = get_connection()
     results = []
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
-                SELECT data FROM classified_chunks 
-                WHERE suppressed = TRUE AND manually_restored = FALSE
-                ORDER BY created_at ASC;
-            """)
+            if session_id:
+                cur.execute("""
+                    SELECT data FROM classified_chunks 
+                    WHERE session_id = %s AND suppressed = TRUE AND manually_restored = FALSE
+                    ORDER BY created_at ASC;
+                """, (session_id,))
+            else:
+                cur.execute("""
+                    SELECT data FROM classified_chunks 
+                    WHERE suppressed = TRUE AND manually_restored = FALSE
+                    ORDER BY created_at ASC;
+                """)
             rows = cur.fetchall()
             for row in rows:
                 results.append(ClassifiedChunk.model_validate(row['data']))
@@ -214,10 +228,8 @@ def create_snapshot(session_id: str) -> str:
     Records their chunk IDs in brd_snapshots and returns the snapshot_id.
     """
     snapshot_id = str(uuid.uuid4())
-    active_signals = get_active_signals()
-    
-    # Optionally filter by session_id if dealing with multiple sessions
-    chunk_ids = [c.chunk_id for c in active_signals if getattr(c, 'session_id', None) == session_id or c.session_id == 'default_session']
+    active_signals = get_active_signals(session_id=session_id)
+    chunk_ids = [c.chunk_id for c in active_signals]
     
     conn = get_connection()
     try:
