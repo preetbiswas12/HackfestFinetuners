@@ -15,23 +15,20 @@ router = APIRouter(
 @router.get("/")
 def get_session_chunks(session_id: str, status: str = "signal"):
     """
-    Retrieve chunks for a session with filtering options (?status=noise, ?status=signal, or ?status=all).
+    Retrieve chunks for a session with filtering options (?status=noise, signal, or all).
     """
     if status == "noise":
-        items = get_noise_items()
+        items = get_noise_items(session_id=session_id)
     elif status == "all":
-        items = get_noise_items() + get_active_signals()
+        items = get_active_signals(session_id=session_id) + get_noise_items(session_id=session_id)
     else:
-        items = get_active_signals()
-        
-    # In-memory filter for the session
-    session_items = [item for item in items if getattr(item, 'session_id', None) == session_id]
-    
+        items = get_active_signals(session_id=session_id)
+
     return {
         "session_id": session_id,
         "status_filter": status,
-        "count": len(session_items),
-        "chunks": session_items
+        "count": len(items),
+        "chunks": items
     }
 
 @router.post("/{chunk_id}/restore")

@@ -19,7 +19,7 @@ load_dotenv(_HERE / ".env")
 from groq import Groq, APIConnectionError, RateLimitError, APIStatusError
 from brd_module.storage import create_snapshot, get_signals_for_snapshot, store_brd_section
 
-def call_llm_with_retry(client: Groq, messages: List[Dict[str, str]], json_mode: bool = False) -> str:
+def call_llm_with_retry(client: Groq, messages: List[Dict[str, str]], json_mode: bool = False, max_tokens: int = 2048) -> str:
     """Rate limit handler reusing the exact same retry logic from classifier.py."""
     MODEL_NAME = "meta-llama/llama-4-maverick-17b-128e-instruct"
     response_format = {"type": "json_object"} if json_mode else None
@@ -30,6 +30,7 @@ def call_llm_with_retry(client: Groq, messages: List[Dict[str, str]], json_mode:
                 messages=messages,
                 model=MODEL_NAME,
                 temperature=0.0,
+                max_tokens=max_tokens,
                 response_format=response_format,
             )
             raw = chat_completion.choices[0].message.content
@@ -47,7 +48,6 @@ def call_llm_with_retry(client: Groq, messages: List[Dict[str, str]], json_mode:
                 continue
             raise Exception(f"LLM API error: {e}")
         except Exception as e:
-            # json.JSONDecodeError not raised without json module direct usage, but catching generally
             if "JSON" in str(e) and attempt == 0:
                 time.sleep(1)
                 continue
@@ -249,6 +249,8 @@ def assumptions_agent(session_id: str, snapshot_id: str, client: Groq = None) ->
         return placeholder
         
     source_ids = [c.chunk_id for c in all_refs]
+    # Cap to 40 most relevant signals to avoid context overflow
+    all_refs = all_refs[:40]
     prompt_text = "You are a senior business analyst inferring implicit project assumptions from communications.\n\n"
     for r in all_refs:
         prompt_text += f"[{r.chunk_id}] {r.cleaned_text}\n"
@@ -331,7 +333,9 @@ def executive_summary_agent(session_id: str, snapshot_id: str, client: Groq = No
     prompt_text += "Here are the generated sections from other agents:\n"
     for name, content in sections.items():
         if name != 'executive_summary':
-            prompt_text += f"\n--- {name.upper()} ---\n{content}\n"
+            # Cap each section at 3000 chars to prevent context overflow / repetition loops
+            capped = content[:3000] + ("..." if len(content) > 3000 else "")
+            prompt_text += f"\n--- {name.upper()} ---\n{capped}\n"
             
     prompt_text += f"\nMetaData: This session processed {total_signals} total signals from {unique_sources} documents.\n"
     

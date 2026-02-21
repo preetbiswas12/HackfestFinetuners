@@ -10,7 +10,7 @@ import os
 from typing import List
 
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_values
 
 from schema import ClassifiedChunk, SignalLabel
 
@@ -124,8 +124,8 @@ def store_chunks(chunks: List[ClassifiedChunk]):
                 INSERT INTO classified_chunks (
                     chunk_id, session_id, source_ref, label, suppressed, 
                     manually_restored, flagged_for_review, created_at, data
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (chunk_id) DO NOTHING;
+                ) VALUES %s
+                ON CONFLICT (chunk_id) DO NOTHING
             """
             
             values = []
@@ -144,22 +144,30 @@ def store_chunks(chunks: List[ClassifiedChunk]):
                     json.dumps(data_json)
                 ))
                 
-            cur.executemany(insert_query, values)
+            # Single multi-row INSERT instead of one INSERT per row
+            execute_values(cur, insert_query, values)
         conn.commit()
     finally:
         conn.close()
 
-def get_active_signals() -> List[ClassifiedChunk]:
-    """Retrieves all chunks that are either true signals or were manually restored from noise."""
+def get_active_signals(session_id: str = None) -> List[ClassifiedChunk]:
+    """Retrieves active signals, optionally filtered by session_id at DB level."""
     conn = get_connection()
     results = []
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
-                SELECT data FROM classified_chunks 
-                WHERE suppressed = FALSE OR manually_restored = TRUE
-                ORDER BY created_at ASC;
-            """)
+            if session_id:
+                cur.execute("""
+                    SELECT data FROM classified_chunks 
+                    WHERE session_id = %s AND (suppressed = FALSE OR manually_restored = TRUE)
+                    ORDER BY created_at ASC;
+                """, (session_id,))
+            else:
+                cur.execute("""
+                    SELECT data FROM classified_chunks 
+                    WHERE suppressed = FALSE OR manually_restored = TRUE
+                    ORDER BY created_at ASC;
+                """)
             rows = cur.fetchall()
             for row in rows:
                 results.append(ClassifiedChunk.model_validate(row['data']))
@@ -167,17 +175,24 @@ def get_active_signals() -> List[ClassifiedChunk]:
         conn.close()
     return results
 
-def get_noise_items() -> List[ClassifiedChunk]:
-    """Retrieves chunks that are suppressed (noise) and haven't been manually restored."""
+def get_noise_items(session_id: str = None) -> List[ClassifiedChunk]:
+    """Retrieves noise chunks, optionally filtered by session_id at DB level."""
     conn = get_connection()
     results = []
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
-                SELECT data FROM classified_chunks 
-                WHERE suppressed = TRUE AND manually_restored = FALSE
-                ORDER BY created_at ASC;
-            """)
+            if session_id:
+                cur.execute("""
+                    SELECT data FROM classified_chunks 
+                    WHERE session_id = %s AND suppressed = TRUE AND manually_restored = FALSE
+                    ORDER BY created_at ASC;
+                """, (session_id,))
+            else:
+                cur.execute("""
+                    SELECT data FROM classified_chunks 
+                    WHERE suppressed = TRUE AND manually_restored = FALSE
+                    ORDER BY created_at ASC;
+                """)
             rows = cur.fetchall()
             for row in rows:
                 results.append(ClassifiedChunk.model_validate(row['data']))
@@ -214,10 +229,8 @@ def create_snapshot(session_id: str) -> str:
     Records their chunk IDs in brd_snapshots and returns the snapshot_id.
     """
     snapshot_id = str(uuid.uuid4())
-    active_signals = get_active_signals()
-    
-    # Optionally filter by session_id if dealing with multiple sessions
-    chunk_ids = [c.chunk_id for c in active_signals if getattr(c, 'session_id', None) == session_id or c.session_id == 'default_session']
+    active_signals = get_active_signals(session_id=session_id)
+    chunk_ids = [c.chunk_id for c in active_signals]
     
     conn = get_connection()
     try:
@@ -309,3 +322,57 @@ def get_latest_brd_sections(session_id: str) -> Dict[str, str]:
     finally:
         conn.close()
     return sections
+
+
+def copy_session_chunks(src_session_id: str, dst_session_id: str) -> int:
+    """
+    Copy all classified chunks from src_session_id into dst_session_id.
+    Clears dst_session_id first so repeated calls don't accumulate duplicates.
+    Updates the session_id field inside the stored JSONB data blob too.
+    Returns the number of chunks copied.
+    """
+    conn = get_connection()
+    copied = 0
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Clear destination first to avoid duplicate accumulation
+            cur.execute("DELETE FROM classified_chunks WHERE session_id = %s", (dst_session_id,))
+
+            cur.execute(
+                "SELECT chunk_id, source_ref, label, suppressed, manually_restored, "
+                "flagged_for_review, created_at, data FROM classified_chunks WHERE session_id = %s",
+                (src_session_id,)
+            )
+            rows = cur.fetchall()
+            for row in rows:
+                new_id = str(uuid.uuid4())
+                data = row['data'] if isinstance(row['data'], dict) else json.loads(row['data'])
+                data['session_id'] = dst_session_id
+                data['chunk_id'] = new_id
+                cur.execute(
+                    """
+                    INSERT INTO classified_chunks
+                        (chunk_id, session_id, source_ref, label, suppressed,
+                         manually_restored, flagged_for_review, created_at, data)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (chunk_id) DO NOTHING
+                    """,
+                    (
+                        new_id,
+                        dst_session_id,
+                        row['source_ref'],
+                        row['label'],
+                        row['suppressed'],
+                        row['manually_restored'],
+                        row['flagged_for_review'],
+                        datetime.now(timezone.utc),
+                        json.dumps(data),
+                    )
+                )
+                copied += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return copied
+
+

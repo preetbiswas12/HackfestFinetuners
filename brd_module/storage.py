@@ -179,22 +179,32 @@ def store_chunks(chunks: List[ClassifiedChunk]):
     finally:
         conn.close()
 
-def get_active_signals() -> List[ClassifiedChunk]:
-    """Retrieves all active chunks using abstracted query execution."""
+def get_active_signals(session_id: str = None) -> List[ClassifiedChunk]:
+    """Retrieves all active chunks using abstracted query execution, optionally filtered by session."""
     conn, db_type = get_connection()
     try:
-        query = "SELECT data FROM classified_chunks WHERE suppressed = FALSE OR manually_restored = TRUE ORDER BY created_at ASC"
-        rows = execute_query(conn, db_type, query, fetch=True)
+        if session_id:
+            query = "SELECT data FROM classified_chunks WHERE session_id = %s AND (suppressed = FALSE OR manually_restored = TRUE) ORDER BY created_at ASC"
+            params = (session_id,)
+        else:
+            query = "SELECT data FROM classified_chunks WHERE suppressed = FALSE OR manually_restored = TRUE ORDER BY created_at ASC"
+            params = None
+        rows = execute_query(conn, db_type, query, params=params, fetch=True)
         return [ClassifiedChunk.model_validate(json.loads(r['data']) if isinstance(r['data'], str) else r['data']) for r in rows]
     finally:
         conn.close()
 
-def get_noise_items() -> List[ClassifiedChunk]:
-    """Retrieves noise chunks using abstracted query execution."""
+def get_noise_items(session_id: str = None) -> List[ClassifiedChunk]:
+    """Retrieves noise chunks using abstracted query execution, optionally filtered by session."""
     conn, db_type = get_connection()
     try:
-        query = "SELECT data FROM classified_chunks WHERE suppressed = TRUE AND manually_restored = FALSE ORDER BY created_at ASC"
-        rows = execute_query(conn, db_type, query, fetch=True)
+        if session_id:
+            query = "SELECT data FROM classified_chunks WHERE session_id = %s AND suppressed = TRUE AND manually_restored = FALSE ORDER BY created_at ASC"
+            params = (session_id,)
+        else:
+            query = "SELECT data FROM classified_chunks WHERE suppressed = TRUE AND manually_restored = FALSE ORDER BY created_at ASC"
+            params = None
+        rows = execute_query(conn, db_type, query, params=params, fetch=True)
         return [ClassifiedChunk.model_validate(json.loads(r['data']) if isinstance(r['data'], str) else r['data']) for r in rows]
     finally:
         conn.close()
@@ -228,10 +238,8 @@ def create_snapshot(session_id: str) -> str:
     Records their chunk IDs in brd_snapshots and returns the snapshot_id.
     """
     snapshot_id = str(uuid.uuid4())
-    active_signals = get_active_signals()
-    
-    # Optionally filter by session_id if dealing with multiple sessions
-    chunk_ids = [c.chunk_id for c in active_signals if getattr(c, 'session_id', None) == session_id or c.session_id == 'default_session']
+    active_signals = get_active_signals(session_id=session_id)
+    chunk_ids = [c.chunk_id for c in active_signals]
     
     conn = get_connection()
     try:
