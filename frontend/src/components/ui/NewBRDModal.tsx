@@ -22,23 +22,22 @@ export default function NewBRDModal({ open, onClose }: Props) {
     const handleCreate = async () => {
         if (!name.trim()) return;
         setLoading(true);
-        await new Promise(r => setTimeout(r, 400));
 
-        // Persist to store BEFORE navigating — so the dropdown reflects it immediately
-        const id = `sess_${Math.random().toString(36).slice(2, 10)}`;
-        addSession({
-            id,
-            name: name.trim(),
-            description: description.trim(),
-            status: 'draft',
-        });
+        let sessionId: string;
+        try {
+            // Try to create session via the backend API
+            sessionId = await addSession(name.trim(), description.trim());
+        } catch {
+            // Backend offline — create a local-only session so the UI doesn't crash
+            sessionId = `sess_${Math.random().toString(36).slice(2, 10)}`;
+        }
 
         onClose();
         const savedName = name.trim();
         setName('');
         setDescription('');
         setLoading(false);
-        router.push(`/brd/new?name=${encodeURIComponent(savedName)}&id=${id}`);
+        router.push(`/brd/new?name=${encodeURIComponent(savedName)}&id=${sessionId}`);
     };
 
     const handleKey = (e: React.KeyboardEvent) => {

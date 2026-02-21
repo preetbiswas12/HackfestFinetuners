@@ -86,6 +86,20 @@ export const useSessionStore = create<SessionStore>()(
         {
             name: 'beacon-sessions', // localStorage key — survives page refresh
             storage: createJSONStorage(() => localStorage),
+            // Self-healing: Sanitise data on load to prevent React "object as child" crashes
+            onRehydrateStorage: (state) => {
+                return (rehydratedState) => {
+                    if (rehydratedState && rehydratedState.sessions) {
+                        rehydratedState.sessions = rehydratedState.sessions.map((s: any) => {
+                            // If name is an object (corrupted data), extract string or fallback
+                            if (typeof s.name === 'object' && s.name !== null) {
+                                return { ...s, name: s.name.name || 'Recovered Session' };
+                            }
+                            return s;
+                        });
+                    }
+                };
+            },
         }
     )
 );
