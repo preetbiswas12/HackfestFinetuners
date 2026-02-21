@@ -14,7 +14,9 @@ from io import BytesIO
 try:
     from weasyprint import HTML, CSS
     WEASYPRINT_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
+    # OSError occurs on Windows when native GLib/Pango DLLs are missing.
+    # PDF export will be unavailable but all other endpoints still work.
     WEASYPRINT_AVAILABLE = False
 
 try:
