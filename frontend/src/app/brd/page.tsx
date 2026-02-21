@@ -289,6 +289,13 @@ export default function BRDPage() {
                 ))}
                 <div className="pt-3 border-t border-white/8 mt-2 space-y-2">
                     <button
+                        onClick={() => setShareOpen(true)}
+                        disabled={!sessionId || !user}
+                        className="btn-secondary w-full text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50 border-white/15 hover:border-white/25"
+                    >
+                        <Share2 size={11} /> Share BRD
+                    </button>
+                    <button
                         onClick={() => generateAll(sessionId)}
                         disabled={generating || !sessionId}
                         className="btn-primary w-full text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
@@ -301,13 +308,6 @@ export default function BRDPage() {
                         className="btn-secondary w-full text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
                         <RefreshCw size={11} className={loading ? 'animate-spin' : ''} /> Refresh
-                    </button>
-                    <button
-                        onClick={() => setShareOpen(true)}
-                        disabled={!sessionId || !user}
-                        className="btn-secondary w-full text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50 border-white/15 hover:border-white/25"
-                    >
-                        <Share2 size={11} /> Share BRD
                     </button>
                 </div>
             </aside>

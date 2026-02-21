@@ -11,6 +11,8 @@ import PipelineStepper, { StageInfo } from '@/components/ui/PipelineStepper';
 import { getChunks } from '@/lib/apiClient';
 import { useSessionStore } from '@/store/useSessionStore';
 import { useAuth } from '@/contexts/AuthContext';
+import { ShareBoardModal } from '@/components/ShareBoardModal';
+import type { Board } from '@/lib/firestore/boards';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,7 +123,7 @@ function DonutChart({
 
 // ─── Contextual Action Centre ─────────────────────────────────────────────────
 
-function ActionCentre({ hasBRDData }: { hasBRDData: boolean }) {
+function ActionCentre({ hasBRDData, onShare }: { hasBRDData: boolean; onShare: () => void }) {
     return (
         <div className="space-y-3 h-full">
             <div className="glass-card p-4 rounded-xl border-amber-500/20 hover:border-amber-500/30 transition-all">
@@ -146,6 +148,14 @@ function ActionCentre({ hasBRDData }: { hasBRDData: boolean }) {
                             <ArrowRight size={14} className="ml-auto opacity-60" />
                         </button>
                     </Link>
+                    <button
+                        onClick={onShare}
+                        disabled={!hasBRDData}
+                        className="btn-secondary w-full flex items-center justify-center gap-2 text-sm py-2 mt-1 disabled:opacity-50"
+                    >
+                        <Share2 size={14} />
+                        Share BRD
+                    </button>
                     <Link href="/signals">
                         <button className="btn-secondary w-full flex items-center justify-center gap-2 text-sm py-2 mt-1">
                             <AlertTriangle size={14} className="text-amber-400" />
@@ -187,6 +197,19 @@ export default function DashboardPage() {
     const [activeSegment, setActiveSegment] = useState<string | null>(null);
     const [counts, setCounts] = useState<SignalCounts>({ total: 0, requirement: 0, decision: 0, feedback: 0, timeline: 0, noise: 0, flags: 0 });
     const [loading, setLoading] = useState(false);
+    const [shareOpen, setShareOpen] = useState(false);
+
+    // Build a minimal Board object for the ShareBoardModal
+    const activeSession = sessions?.find(s => s.id === sessionId);
+    const boardForShare: Board | null = activeSession && sessionId ? {
+        id: sessionId,
+        title: activeSession.name ?? 'Untitled BRD',
+        description: activeSession.description ?? '',
+        ownerUid: activeSession.role === 'owner' ? (user?.uid ?? '') : 'shared',
+        status: activeSession.status ?? 'draft',
+        createdAt: new Date() as unknown as import('firebase/firestore').Timestamp,
+        updatedAt: new Date() as unknown as import('firebase/firestore').Timestamp,
+    } : null;
 
     useEffect(() => {
         if (!sessionId) return;
@@ -349,7 +372,7 @@ export default function DashboardPage() {
                     className="glass-card p-5 rounded-xl lg:col-span-2"
                 >
                     <h2 className="text-sm font-semibold text-zinc-200 mb-4">Action Centre</h2>
-                    <ActionCentre hasBRDData={counts.total > 0} />
+                    <ActionCentre hasBRDData={counts.total > 0} onShare={() => setShareOpen(true)} />
                 </motion.div>
             </div>
 
@@ -377,8 +400,8 @@ export default function DashboardPage() {
                                         {b.name}
                                     </p>
                                     <span className={`glass-badge text-[9px] flex-shrink-0 ${b.role === 'editor'
-                                            ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
-                                            : 'bg-zinc-700/30 border-zinc-600/30 text-zinc-400'
+                                        ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                                        : 'bg-zinc-700/30 border-zinc-600/30 text-zinc-400'
                                         }`}>
                                         {b.role}
                                     </span>
@@ -392,6 +415,15 @@ export default function DashboardPage() {
                         ))}
                     </div>
                 </motion.div>
+            )}
+
+            {/* Share Modal */}
+            {boardForShare && (
+                <ShareBoardModal
+                    board={boardForShare}
+                    isOpen={shareOpen}
+                    onClose={() => setShareOpen(false)}
+                />
             )}
         </div>
     );
