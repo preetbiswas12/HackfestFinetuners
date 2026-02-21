@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { useRef, useState, useCallback, useEffect } from 'react';
+import { LampContainer } from '@/components/ui/lamp';
 
 /* ─── useTypewriter ────────────────────────────────────────────────────────── */
 function useTypewriter(text: string, speed = 28) {
@@ -37,40 +38,65 @@ function useTypewriter(text: string, speed = 28) {
 /* ─── Lamp Effect ──────────────────────────────────────────────────────────── */
 function LampBeam() {
     return (
-        <div className="absolute top-0 inset-x-0 pointer-events-none overflow-hidden" style={{ height: '340px', zIndex: 0 }}>
-            {/* Wide cone */}
-            <div style={{
-                position: 'absolute', top: 0, left: '50%',
-                transform: 'translateX(-50%)',
-                width: '700px', height: '320px',
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.01) 55%, transparent 100%)',
-                clipPath: 'polygon(34% 0%, 66% 0%, 88% 100%, 12% 100%)',
-                filter: 'blur(14px)',
-            }} />
-            {/* Sharp narrow cone in front */}
-            <div style={{
-                position: 'absolute', top: 0, left: '50%',
-                transform: 'translateX(-50%)',
-                width: '280px', height: '220px',
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 100%)',
-                clipPath: 'polygon(40% 0%, 60% 0%, 80% 100%, 20% 100%)',
-            }} />
-            {/* Bright filament */}
-            <div style={{
-                position: 'absolute', top: '0px', left: '50%',
-                transform: 'translateX(-50%)',
-                width: '200px', height: '2px',
-                background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 35%, rgba(255,255,255,0.65) 50%, rgba(255,255,255,0.55) 65%, transparent 100%)',
-                boxShadow: '0 0 28px 8px rgba(255,255,255,0.10)',
-            }} />
-            {/* Center pinpoint glow */}
-            <div style={{
-                position: 'absolute', top: '-2px', left: '50%',
-                transform: 'translateX(-50%)',
-                width: '80px', height: '50px',
-                background: 'radial-gradient(ellipse, rgba(255,255,255,0.18) 0%, transparent 70%)',
-                filter: 'blur(6px)',
-            }} />
+        <div className="absolute top-0 inset-x-0 pointer-events-none overflow-hidden" style={{ height: '600px', zIndex: 0 }}>
+            <div className="relative flex w-full flex-1 items-center justify-center isolate">
+                <motion.div
+                    initial={{ opacity: 0.7, width: "15rem" }}
+                    animate={{ opacity: 1, width: "30rem" }}
+                    transition={{
+                        delay: 0.3,
+                        duration: 0.8,
+                        ease: "easeInOut",
+                    }}
+                    style={{
+                        backgroundImage: `conic-gradient(var(--conic-position), var(--tw-gradient-stops))`,
+                    }}
+                    className="absolute inset-auto right-1/2 h-96 overflow-visible w-[30rem] bg-gradient-conic from-slate-400 via-slate-500 to-transparent text-white [--conic-position:from_70deg_at_center_top]"
+                >
+                    <div className="absolute w-[100%] left-0 bg-slate-950 h-52 bottom-0 z-20 [mask-image:linear-gradient(to_top,white,transparent)]" />
+                    <div className="absolute w-40 h-[100%] left-0 bg-slate-950 bottom-0 z-20 [mask-image:linear-gradient(to_right,white,transparent)]" />
+                </motion.div>
+                <motion.div
+                    initial={{ opacity: 0.7, width: "15rem" }}
+                    animate={{ opacity: 1, width: "30rem" }}
+                    transition={{
+                        delay: 0.3,
+                        duration: 0.8,
+                        ease: "easeInOut",
+                    }}
+                    style={{
+                        backgroundImage: `conic-gradient(var(--conic-position), var(--tw-gradient-stops))`,
+                    }}
+                    className="absolute inset-auto left-1/2 h-96 w-[30rem] bg-gradient-conic from-transparent via-slate-500 to-slate-400 text-white [--conic-position:from_290deg_at_center_top]"
+                >
+                    <div className="absolute w-40 h-[100%] right-0 bg-slate-950 bottom-0 z-20 [mask-image:linear-gradient(to_left,white,transparent)]" />
+                    <div className="absolute w-[100%] right-0 bg-slate-950 h-52 bottom-0 z-20 [mask-image:linear-gradient(to_top,white,transparent)]" />
+                </motion.div>
+                <div className="absolute top-1/2 h-64 w-full translate-y-12 scale-x-150 bg-slate-950 blur-3xl"></div>
+                <div className="absolute top-1/2 z-50 h-64 w-full bg-transparent opacity-20 backdrop-blur-md"></div>
+                <div className="absolute inset-auto z-50 h-48 w-[28rem] -translate-y-1/2 rounded-full bg-slate-400 opacity-70 blur-3xl"></div>
+                <motion.div
+                    initial={{ width: "8rem" }}
+                    animate={{ width: "16rem" }}
+                    transition={{
+                        delay: 0.3,
+                        duration: 0.8,
+                        ease: "easeInOut",
+                    }}
+                    className="absolute inset-auto z-30 h-48 w-64 -translate-y-[6rem] rounded-full bg-slate-300 blur-2xl"
+                ></motion.div>
+                <motion.div
+                    initial={{ width: "15rem" }}
+                    animate={{ width: "30rem" }}
+                    transition={{
+                        delay: 0.3,
+                        duration: 0.8,
+                        ease: "easeInOut",
+                    }}
+                    className="absolute inset-auto z-50 h-0.5 w-[30rem] -translate-y-[7rem] bg-slate-300"
+                ></motion.div>
+                <div className="absolute inset-auto z-40 h-56 w-full -translate-y-[12.5rem] bg-slate-950"></div>
+            </div>
         </div>
     );
 }
@@ -98,7 +124,7 @@ function FloatCard({
 }
 
 /* ─── Terminal card ────────────────────────────────────────────────────────── */
-const TERM = '$ ps21 analyze --src slack\n[✓] 248 chunks parsed\n[✓] 183 signals found\n[→] Classifying… 94%\n[✓] BRD queued';
+const TERM = '$ beacon analyze --src slack\n[✓] 248 chunks parsed\n[✓] 183 signals found\n[→] Classifying… 94%\n[✓] BRD queued';
 function TerminalCard() {
     const tw = useTypewriter(TERM, 24);
     return (
@@ -109,7 +135,7 @@ function TerminalCard() {
                     <div className="w-2.5 h-2.5 rounded-full bg-red-500/50" />
                     <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/50" />
                     <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/50" />
-                    <span className="ml-auto font-mono text-[9px] text-zinc-700">ps21-cli</span>
+                    <span className="ml-auto font-mono text-[9px] text-zinc-700">beacon-cli</span>
                 </div>
                 <div className="font-mono text-[10.5px] text-zinc-400 leading-[1.6] whitespace-pre min-h-[68px]">
                     {tw.displayed || <span className="text-zinc-700">hover to run →</span>}
@@ -412,7 +438,7 @@ function Footer() {
                                 <Zap size={14} className="text-white" />
                             </div>
                             <div>
-                                <p className="text-sm font-bold text-white leading-none">PS21 BRD Agent</p>
+                                <p className="text-sm font-bold text-white leading-none">Beacon</p>
                                 <p className="text-[10px] text-zinc-600 mt-0.5">Hackfest 2.0</p>
                             </div>
                         </div>
@@ -432,7 +458,7 @@ function Footer() {
                                 className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-300 transition-colors">
                                 <Github size={13} /> GitHub
                             </a>
-                            <a href="mailto:team@ps21.ai"
+                            <a href="mailto:team@beacon.ai"
                                 className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-300 transition-colors">
                                 <Mail size={13} /> Contact
                             </a>
@@ -479,7 +505,7 @@ function Footer() {
                 {/* Bottom bar */}
                 <div className="flex items-center justify-between flex-wrap gap-4 pt-6"
                     style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="text-xs text-zinc-700">© 2025 PS21 BRD Agent. Built for Hackfest 2.0.</span>
+                    <span className="text-xs text-zinc-700">© 2025 Beacon. Built for Hackfest 2.0.</span>
                     <div className="flex items-center gap-6">
                         {['Privacy Policy', 'Terms of Use', 'AI Disclaimer'].map(l => (
                             <span key={l} className="text-xs text-zinc-700 hover:text-zinc-500 cursor-pointer transition-colors">{l}</span>
@@ -516,7 +542,7 @@ export default function HomePage() {
                             <Zap size={13} className="text-white" />
                         </div>
                         <span className="text-sm font-bold text-white tracking-tight">
-                            PS21 <span className="text-zinc-500 font-normal">BRD Agent</span>
+                            Beacon
                         </span>
                     </div>
                     <div className="flex items-center gap-3">
@@ -564,7 +590,7 @@ export default function HomePage() {
                                 transition={{ duration: 0.75, delay: 0.14 }}
                                 className="text-base text-zinc-400 leading-relaxed max-w-lg mx-auto"
                             >
-                                PS21 BRD Agent ingests Slack threads, emails, and documents — then
+                                Beacon ingests Slack threads, emails, and documents — then
                                 automatically produces structured, validated Business Requirements Documents
                                 with full source attribution in under 5 minutes.
                             </motion.p>
@@ -702,7 +728,7 @@ export default function HomePage() {
                     <div className="grid md:grid-cols-2 gap-12">
                         <div>
                             <span className="text-xs font-mono text-zinc-700 tracking-widest uppercase mb-4 block">Technology</span>
-                            <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight mb-6">What powers PS21</h2>
+                            <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight mb-6">What powers Beacon</h2>
                             <div className="space-y-4">
                                 {[['Groq LLM API', 'Ultra-fast inference for classification and generation (sub-1s per section)'], ['Next.js 14 + TypeScript', 'App Router, server components, and full type safety'], ['PostgreSQL + Supabase', 'Signal storage, session management, and attribution linking'], ['FastAPI (Python)', 'Signal processing pipeline, noise filter, and LLM orchestration'], ['Framer Motion', 'Smooth 60fps animations and interactive 3D visualizations'], ['Zustand + Persist', 'Client-side state with localStorage hydration']].map(([n, d]) => (
                                     <div key={n} className="flex items-start gap-3">

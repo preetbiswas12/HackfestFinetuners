@@ -25,7 +25,7 @@ export default function Sidebar() {
         >
             {/* Logo */}
             <div className="mb-10 text-cyan-400 font-bold text-xl tracking-tighter drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]">
-                PS21
+                Beacon
             </div>
 
             {/* Nav Items */}

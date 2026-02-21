@@ -191,7 +191,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                                         <Zap size={14} className="text-white" />
                                     </div>
                                     <div>
-                                        <h1 className="text-sm font-bold text-white leading-none tracking-tight">PS21</h1>
+                                        <h1 className="text-sm font-bold text-white leading-none tracking-tight">Beacon</h1>
                                         <p className="text-[10px] text-zinc-400 font-medium">BRD Agent</p>
                                     </div>
                                 </div>
@@ -287,28 +287,30 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
                     {/* ── GS-02 Session Status Bar ───────────────────────────────── */}
-                    <header className="glass-topbar h-12 flex items-center justify-between px-4 flex-shrink-0 z-20">
-                        <div className="flex items-center gap-3">
+                    <header className="glass-topbar h-12 flex items-center justify-between px-3 sm:px-4 flex-shrink-0 z-20 gap-2 sm:gap-3">
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                             {/* Hamburger */}
                             <button
                                 onClick={() => setSidebarOpen(v => !v)}
-                                className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors"
+                                className="p-1 sm:p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors flex-shrink-0"
                             >
-                                {sidebarOpen ? <X size={16} /> : <Menu size={16} />}
+                                {sidebarOpen ? <X size={14} /> : <Menu size={14} />}
                             </button>
 
                             {/* Session ID */}
-                            <span className="font-mono text-[11px] text-zinc-600 hidden sm:block">
+                            <span className="font-mono text-[9px] sm:text-[11px] text-zinc-600 hidden md:block truncate">
                                 sess_02a9fe3c
                             </span>
 
                             {/* Breadcrumb */}
-                            <div className="hidden md:flex items-center gap-1.5 text-xs text-zinc-500">
-                                <span>Home</span>
+                            <div className="hidden sm:flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs text-zinc-500 truncate">
+                                <Link href="/" className="hover:text-zinc-300 transition-colors truncate">
+                                    Home
+                                </Link>
                                 {pathname && pathname !== '/' && (
                                     <>
-                                        <ChevronRight size={10} className="text-zinc-700" />
-                                        <span className="text-zinc-300 capitalize">
+                                        <ChevronRight size={10} className="text-zinc-700 flex-shrink-0" />
+                                        <span className="text-zinc-300 capitalize truncate">
                                             {pathname.split('/').filter(Boolean).at(-1)}
                                         </span>
                                     </>
@@ -316,21 +318,21 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1 sm:gap-2 lg:gap-3">
                             {/* Mini pipeline stepper */}
                             <PipelineStepper stages={stages} variant="compact" className="hidden lg:flex" />
 
                             {/* Signal count */}
-                            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full glass-card text-[11px]">
+                            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full glass-card text-[10px] sm:text-[11px]">
                                 <Zap size={10} className="text-zinc-400" />
-                                <span className="text-zinc-400">183 signals</span>
+                                <span className="text-zinc-400 hidden md:inline">183 signals</span>
                             </div>
 
                             {/* Notification bell */}
-                            <button className="relative p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors">
-                                <Bell size={15} />
+                            <button className="relative p-1 sm:p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors flex-shrink-0">
+                                <Bell size={14} />
                                 {notifCount > 0 && (
-                                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white">
+                                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[8px] font-bold text-white">
                                         {notifCount}
                                     </span>
                                 )}

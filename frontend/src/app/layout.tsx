@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-    title: 'PS21 BRD Agent',
+    title: 'Beacon',
     description: 'AI-Powered Business Requirements Generator — transform conversations into professional BRDs',
 };
 

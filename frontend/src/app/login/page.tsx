@@ -50,7 +50,7 @@ export default function LoginPage() {
                         <div className="w-8 h-8 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center">
                             <Zap size={14} className="text-white" />
                         </div>
-                        <span className="text-sm font-bold text-white tracking-tight">PS21 <span className="text-zinc-400 font-medium">BRD Agent</span></span>
+                        <span className="text-sm font-bold text-white tracking-tight">Beacon</span>
                     </div>
                     <h1 className="text-3xl font-bold text-white tracking-tight">Sign in</h1>
                     <p className="text-zinc-500 text-sm">Continue to your BRD workspace.</p>

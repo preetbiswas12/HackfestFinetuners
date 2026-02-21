@@ -185,11 +185,11 @@ export default function IngestionPage() {
     };
 
     return (
-        <div className="p-6 space-y-6 max-w-[1400px]">
+        <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-[1400px]">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-zinc-100">Source Management</h1>
-                <p className="text-sm text-zinc-500 mt-0.5">Connect and manage your data sources</p>
+                <h1 className="text-xl sm:text-2xl font-bold text-zinc-100">Source Management</h1>
+                <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">Connect and manage your data sources</p>
             </div>
 
             {/* Error banner */}
@@ -204,12 +204,12 @@ export default function IngestionPage() {
             )}
 
             {/* S2-01: Connector Cards */}
-            <div className="grid md:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
 
                 {/* Slack Connector */}
                 <motion.div
                     initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-                    className="glass-card p-5 rounded-xl space-y-4"
+                    className="glass-card p-3 sm:p-5 rounded-xl space-y-3 sm:space-y-4"
                 >
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-[#4A154B]/40 border border-[#4A154B]/60 flex items-center justify-center">
@@ -268,7 +268,7 @@ export default function IngestionPage() {
                 {/* Gmail — Coming Soon */}
                 <motion.div
                     initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.07 }}
-                    className="glass-card p-5 rounded-xl space-y-4 opacity-50 cursor-not-allowed"
+                    className="glass-card p-3 sm:p-5 rounded-xl space-y-3 sm:space-y-4 opacity-50 cursor-not-allowed"
                 >
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
@@ -289,7 +289,7 @@ export default function IngestionPage() {
                 {/* File Upload */}
                 <motion.div
                     initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.14 }}
-                    className="glass-card p-5 rounded-xl space-y-4"
+                    className="glass-card p-3 sm:p-5 rounded-xl space-y-3 sm:space-y-4 sm:col-span-2 lg:col-span-1"
                 >
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-500/25 flex items-center justify-center">
@@ -306,13 +306,13 @@ export default function IngestionPage() {
                         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                         onDragLeave={() => setDragOver(false)}
                         onDrop={handleDrop}
-                        className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center gap-2 transition-all cursor-pointer ${dragOver
+                        className={`border-2 border-dashed rounded-xl p-4 sm:p-6 flex flex-col items-center gap-2 transition-all cursor-pointer ${dragOver
                             ? 'border-cyan-400/60 bg-cyan-400/5'
                             : 'border-white/10 hover:border-white/20 hover:bg-white/3'
                             }`}
                         onClick={() => document.getElementById('file-input')?.click()}
                     >
-                        <Upload size={22} className={dragOver ? 'text-cyan-400' : 'text-zinc-600'} />
+                        <Upload size={18} className={dragOver ? 'text-cyan-400' : 'text-zinc-600'} />
                         <p className="text-xs text-zinc-400 text-center">
                             Drop files here or <span className="text-cyan-400">browse</span>
                         </p>

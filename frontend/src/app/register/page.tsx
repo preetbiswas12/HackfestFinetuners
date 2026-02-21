@@ -55,7 +55,7 @@ export default function RegisterPage() {
                             <Zap size={14} className="text-white" />
                         </div>
                         <span className="text-sm font-bold text-white tracking-tight">
-                            PS21 <span className="text-zinc-400 font-medium">BRD Agent</span>
+                            Beacon
                         </span>
                     </div>
                     <h1 className="text-3xl font-bold text-white tracking-tight">Create account</h1>

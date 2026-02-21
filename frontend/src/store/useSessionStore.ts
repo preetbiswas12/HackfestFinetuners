@@ -84,7 +84,7 @@ export const useSessionStore = create<SessionStore>()(
             },
         }),
         {
-            name: 'ps21-brd-sessions', // localStorage key — survives page refresh
+            name: 'beacon-sessions', // localStorage key — survives page refresh
             storage: createJSONStorage(() => localStorage),
         }
     )

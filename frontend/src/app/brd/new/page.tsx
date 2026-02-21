@@ -144,7 +144,7 @@ function Step2Connect({ selected, setSelected, onNext, onBack }: {
         <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.3 }} className="space-y-6">
             <div>
                 <h2 className="text-xl font-bold text-white mb-1">Connect Slack channels</h2>
-                <p className="text-sm text-zinc-500">Select the channels that contain relevant conversations. PS21 will extract requirement signals from the last 90 days of messages.</p>
+                <p className="text-sm text-zinc-500">Select the channels that contain relevant conversations. Beacon will extract requirement signals from the last 90 days of messages.</p>
             </div>
 
             {/* Workspace status */}
@@ -152,8 +152,8 @@ function Step2Connect({ selected, setSelected, onNext, onBack }: {
                 style={{ background: 'rgba(74,222,128,0.05)', border: '1px solid rgba(74,222,128,0.15)' }}>
                 <div className="w-2 h-2 rounded-full bg-emerald-400" style={{ boxShadow: '0 0 6px rgba(74,222,128,0.5)' }} />
                 <div>
-                    <p className="text-sm font-medium text-zinc-200">PS21 workspace connected</p>
-                    <p className="text-xs text-zinc-500">team-ps21.slack.com · 23 channels available</p>
+                    <p className="text-sm font-medium text-zinc-200">Beacon workspace connected</p>
+                    <p className="text-xs text-zinc-500">team-beacon.slack.com · 23 channels available</p>
                 </div>
                 <span className="ml-auto text-xs text-emerald-400 font-mono">linked</span>
             </div>
@@ -182,7 +182,7 @@ function Step2Connect({ selected, setSelected, onNext, onBack }: {
                 })}
             </div>
 
-            <p className="text-xs text-zinc-600">Messages are read-only. PS21 never posts or modifies channel content.</p>
+            <p className="text-xs text-zinc-600">Messages are read-only. Beacon never posts or modifies channel content.</p>
 
             <div className="flex items-center gap-3 pt-2">
                 <button onClick={onBack} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-all">
@@ -232,7 +232,7 @@ function Step3Generate({ brdId, brdName }: { brdId: string; brdName: string; }) 
         <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.3 }} className="space-y-6">
             <div>
                 <h2 className="text-xl font-bold text-white mb-1">Generate BRD</h2>
-                <p className="text-sm text-zinc-500">PS21 will orchestrate multiple AI models to extract, classify, and synthesize your requirements into a complete Business Requirements Document.</p>
+                <p className="text-sm text-zinc-500">Beacon will orchestrate multiple AI models to extract, classify, and synthesize your requirements into a complete Business Requirements Document.</p>
             </div>
 
             {/* BRD preview card */}
