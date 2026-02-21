@@ -5,12 +5,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     CheckCircle2, AlertTriangle, Lock, Edit3, RefreshCw,
     ChevronDown, ChevronUp, X, Eye, RotateCcw, Link as LinkIcon,
-    Clock, FileText, Unlock, Loader2, Zap
+    Clock, FileText, Unlock, Loader2, Zap, Share2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Drawer from '@/components/ui/Drawer';
 import { useBRDStore } from '@/store/useBRDStore';
 import { useSessionStore } from '@/store/useSessionStore';
+import { ShareBoardModal } from '@/components/ShareBoardModal';
+import { useAuth } from '@/contexts/AuthContext';
+import type { Board } from '@/lib/firestore/boards';
 
 // ─── Types & Mock Data ────────────────────────────────────────────────────────
 
@@ -192,7 +195,8 @@ function SectionCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BRDPage() {
-    const { activeSessionId } = useSessionStore();
+    const { activeSessionId, sessions } = useSessionStore();
+    const { user } = useAuth();
     const sessionId = activeSessionId ?? '';
     const { sections, flags: apiFlags, loading, generating, error, generateAll, loadBRD, updateSection } = useBRDStore();
 
@@ -202,6 +206,19 @@ export default function BRDPage() {
     const [flags, setFlags] = useState<ValidationFlag[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editContent, setEditContent] = useState('');
+    const [shareOpen, setShareOpen] = useState(false);
+
+    // Build a minimal Board object for the ShareBoardModal
+    const activeSession = sessions?.find(s => s.id === sessionId);
+    const boardForShare: Board | null = user && sessionId ? {
+        id: sessionId,
+        title: activeSession?.name ?? 'Untitled BRD',
+        description: '',
+        ownerUid: user.uid,
+        status: 'draft',
+        createdAt: new Date() as unknown as import('firebase/firestore').Timestamp,
+        updatedAt: new Date() as unknown as import('firebase/firestore').Timestamp,
+    } : null;
 
     // Load BRD sections from the API when the page mounts
     useEffect(() => {
@@ -284,6 +301,13 @@ export default function BRDPage() {
                         className="btn-secondary w-full text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
                         <RefreshCw size={11} className={loading ? 'animate-spin' : ''} /> Refresh
+                    </button>
+                    <button
+                        onClick={() => setShareOpen(true)}
+                        disabled={!sessionId || !user}
+                        className="btn-secondary w-full text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50 border-white/15 hover:border-white/25"
+                    >
+                        <Share2 size={11} /> Share BRD
                     </button>
                 </div>
             </aside>
@@ -386,6 +410,15 @@ export default function BRDPage() {
                     )}
                 </div>
             </div>
+
+            {/* Share Modal */}
+            {boardForShare && (
+                <ShareBoardModal
+                    board={boardForShare}
+                    isOpen={shareOpen}
+                    onClose={() => setShareOpen(false)}
+                />
+            )}
 
             {/* S4-05 Attribution Drawer */}
             <Drawer

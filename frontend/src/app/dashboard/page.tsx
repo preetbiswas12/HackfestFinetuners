@@ -5,11 +5,12 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import {
     ArrowRight, Zap, CheckCircle2, AlertTriangle, Download,
-    TrendingUp, Database, FileText, Plus, Loader2
+    TrendingUp, Database, FileText, Plus, Loader2, Share2
 } from 'lucide-react';
 import PipelineStepper, { StageInfo } from '@/components/ui/PipelineStepper';
 import { getChunks } from '@/lib/apiClient';
 import { useSessionStore } from '@/store/useSessionStore';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -176,8 +177,12 @@ function ActionCentre({ hasBRDData }: { hasBRDData: boolean }) {
 // ─── Main Dashboard Page ──────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-    const { activeSessionId } = useSessionStore();
+    const { activeSessionId, sessions } = useSessionStore();
+    const { user } = useAuth();
     const sessionId = activeSessionId ?? '';
+
+    // Boards shared with this user (not owned by them)
+    const sharedBoards = sessions.filter((s) => s.role && s.role !== 'owner');
 
     const [activeSegment, setActiveSegment] = useState<string | null>(null);
     const [counts, setCounts] = useState<SignalCounts>({ total: 0, requirement: 0, decision: 0, feedback: 0, timeline: 0, noise: 0, flags: 0 });
@@ -347,6 +352,47 @@ export default function DashboardPage() {
                     <ActionCentre hasBRDData={counts.total > 0} />
                 </motion.div>
             </div>
+
+            {/* Shared BRDs — visible when user has joined boards via invite */}
+            {sharedBoards.length > 0 && (
+                <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.4 }}
+                    className="glass-card p-5 rounded-xl"
+                >
+                    <div className="flex items-center gap-2 mb-4">
+                        <Share2 size={14} className="text-cyan-400" />
+                        <h2 className="text-sm font-semibold text-zinc-200">Shared with me</h2>
+                        <span className="glass-badge bg-white/5 border-white/10 text-zinc-400 ml-auto">{sharedBoards.length} board{sharedBoards.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {sharedBoards.map((b) => (
+                            <Link key={b.id} href={`/brd`}
+                                onClick={() => useSessionStore.getState().setActive(b.id)}
+                                className="glass-card p-4 rounded-xl hover:border-white/20 transition-all group block"
+                            >
+                                <div className="flex items-start justify-between gap-2 mb-2">
+                                    <p className="text-sm font-medium text-zinc-100 group-hover:text-white transition-colors truncate">
+                                        {b.name}
+                                    </p>
+                                    <span className={`glass-badge text-[9px] flex-shrink-0 ${b.role === 'editor'
+                                            ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                                            : 'bg-zinc-700/30 border-zinc-600/30 text-zinc-400'
+                                        }`}>
+                                        {b.role}
+                                    </span>
+                                </div>
+                                <p className="text-[10px] font-mono text-zinc-600 truncate">{b.id}</p>
+                                <div className="flex items-center gap-1 mt-3 text-xs text-zinc-500 group-hover:text-cyan-400 transition-colors">
+                                    <ArrowRight size={12} />
+                                    <span>Open BRD</span>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                </motion.div>
+            )}
         </div>
     );
 }

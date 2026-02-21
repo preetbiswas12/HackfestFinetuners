@@ -202,6 +202,16 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
                             {/* Navigation */}
                             <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+                                <div className="px-2 mb-4">
+                                    <button
+                                        onClick={() => setModalOpen(true)}
+                                        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white text-zinc-950 font-semibold text-sm hover:bg-zinc-200 transition-all shadow-[0_4px_12px_rgba(255,255,255,0.1)] active:scale-[0.98]"
+                                    >
+                                        <Plus size={16} />
+                                        <span>New BRD Session</span>
+                                    </button>
+                                </div>
+
                                 {navigation.map((item) => {
                                     const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
                                     const Icon = item.icon;

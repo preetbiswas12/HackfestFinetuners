@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, FileText, Loader2 } from 'lucide-react';
 import { useSessionStore } from '@/store/useSessionStore';
+import { useAuth } from '@/contexts/AuthContext';
+import { createSession } from '@/lib/apiClient';
 
 interface Props {
     open: boolean;
@@ -15,29 +17,41 @@ interface Props {
 export default function NewBRDModal({ open, onClose }: Props) {
     const router = useRouter();
     const addSession = useSessionStore((s) => s.addSession);
+    const { user } = useAuth();
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
 
     const handleCreate = async () => {
-        if (!name.trim()) return;
+        if (!name.trim() || !user) return;
         setLoading(true);
+        setError('');
 
-        let sessionId: string;
         try {
-            // Try to create session via the backend API
-            sessionId = await addSession(name.trim(), description.trim());
-        } catch {
-            // Backend offline — create a local-only session so the UI doesn't crash
-            sessionId = `sess_${Math.random().toString(36).slice(2, 10)}`;
-        }
+            // 1. Get a session ID from the backend (or generate one if offline)
+            let sessionId: string;
+            try {
+                const res = await createSession();
+                sessionId = res.session_id;
+            } catch {
+                // Backend offline — generate a local ID; Firestore will still work
+                sessionId = `sess_${crypto.randomUUID().slice(0, 8)}`;
+            }
 
-        onClose();
-        const savedName = name.trim();
-        setName('');
-        setDescription('');
-        setLoading(false);
-        router.push(`/brd/new?name=${encodeURIComponent(savedName)}&id=${sessionId}`);
+            // 2. Write to Firestore (board doc + member doc + user membership index)
+            await addSession(name.trim(), description.trim(), user.uid, sessionId);
+
+            const savedName = name.trim();
+            setName('');
+            setDescription('');
+            onClose();
+            router.push(`/brd/new?name=${encodeURIComponent(savedName)}&id=${sessionId}`);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Something went wrong');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleKey = (e: React.KeyboardEvent) => {
@@ -130,13 +144,19 @@ export default function NewBRDModal({ open, onClose }: Props) {
                                     />
                                     <p className="text-right text-[10px] text-zinc-700">{description.length}/300</p>
                                 </div>
+
+                                {error && (
+                                    <p className="text-xs text-red-400 bg-red-500/8 border border-red-500/20 px-3 py-2 rounded-lg">
+                                        {error}
+                                    </p>
+                                )}
                             </div>
 
                             {/* Actions */}
                             <div className="flex items-center gap-3 mt-6">
                                 <button
                                     onClick={handleCreate}
-                                    disabled={!name.trim() || loading}
+                                    disabled={!name.trim() || loading || !user}
                                     className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-white text-zinc-900 hover:bg-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_2px_16px_rgba(255,255,255,0.10)]"
                                 >
                                     {loading
@@ -153,7 +173,7 @@ export default function NewBRDModal({ open, onClose }: Props) {
                             </div>
 
                             <p className="text-center text-[10px] text-zinc-700 mt-4">
-                                Next: upload sources &amp; connect channels
+                                Saved to your Firestore workspace — visible to all collaborators
                             </p>
                         </div>
                     </motion.div>

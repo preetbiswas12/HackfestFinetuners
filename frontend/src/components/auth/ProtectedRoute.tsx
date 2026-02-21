@@ -1,29 +1,23 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/store/useAuthStore';
+import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const router = useRouter();
-    const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-    const hasHydrated = useAuthStore((state) => state._hasHydrated);
-    const [isChecking, setIsChecking] = useState(true);
+    const { user, loading } = useAuth();
 
     useEffect(() => {
-        if (hasHydrated) {
-            if (!isAuthenticated) {
-                // Redirect unauthenticated users to home page
-                router.push('/');
-            } else {
-                setIsChecking(false);
-            }
+        // Only redirect once Firebase has resolved the auth state
+        if (!loading && !user) {
+            router.push('/login');
         }
-    }, [isAuthenticated, hasHydrated, router]);
+    }, [user, loading, router]);
 
-    // Show loading while hydrating or checking auth
-    if (!hasHydrated || isChecking) {
+    // Show spinner while Firebase checks auth state (usually < 1 second)
+    if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
                 <div className="text-center">
@@ -34,8 +28,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
         );
     }
 
-    if (!isAuthenticated) {
-        return null; // Will redirect
+    // If not authenticated, return null — redirect is already triggered above
+    if (!user) {
+        return null;
     }
 
     return <>{children}</>;

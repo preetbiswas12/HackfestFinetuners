@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/store/useAuthStore';
+import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Zap, Eye, EyeOff } from 'lucide-react';
 
 export default function RegisterPage() {
     const router = useRouter();
-    const login = useAuthStore((state) => state.login);
+    const { signup } = useAuth();
 
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -27,10 +27,19 @@ export default function RegisterPage() {
         if (password !== confirm) { setError('Passwords do not match.'); return; }
 
         setLoading(true);
-        // Simulate account creation — reuse login to set auth state
-        await new Promise(r => setTimeout(r, 600));
-        await login(email, password);
-        router.push('/dashboard');
+        try {
+            await signup(email, password, name.trim());
+            // Set session cookie for middleware
+            await fetch('/api/auth/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'login' }),
+            });
+            router.push('/dashboard');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Failed to create account. Please try again.');
+            setLoading(false);
+        }
     };
 
     return (
@@ -86,6 +95,7 @@ export default function RegisterPage() {
                             onChange={e => setName(e.target.value)}
                             className="glass-input w-full px-4 py-3 text-sm"
                             placeholder="Jane Smith"
+                            autoComplete="name"
                         />
                     </div>
 
@@ -99,6 +109,7 @@ export default function RegisterPage() {
                             onChange={e => setEmail(e.target.value)}
                             className="glass-input w-full px-4 py-3 text-sm"
                             placeholder="you@company.com"
+                            autoComplete="email"
                         />
                     </div>
 
@@ -113,6 +124,7 @@ export default function RegisterPage() {
                                 onChange={e => setPassword(e.target.value)}
                                 className="glass-input w-full px-4 py-3 pr-10 text-sm"
                                 placeholder="Min. 6 characters"
+                                autoComplete="new-password"
                             />
                             <button
                                 type="button"
@@ -134,6 +146,7 @@ export default function RegisterPage() {
                             onChange={e => setConfirm(e.target.value)}
                             className="glass-input w-full px-4 py-3 text-sm"
                             placeholder="Re-enter password"
+                            autoComplete="new-password"
                         />
                     </div>
 
