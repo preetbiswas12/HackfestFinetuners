@@ -1,48 +1,44 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import {
     ArrowRight, Zap, CheckCircle2, AlertTriangle, Download,
-    TrendingUp, Database, FileText, Plus
+    TrendingUp, Database, FileText, Plus, Loader2
 } from 'lucide-react';
 import PipelineStepper, { StageInfo } from '@/components/ui/PipelineStepper';
+import { getChunks } from '@/lib/apiClient';
+import { useSessionStore } from '@/store/useSessionStore';
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const PIPELINE_STAGES: StageInfo[] = [
-    { name: 'Ingestion', status: 'complete', timestamp: '14:02', itemCount: 248 },
-    { name: 'Noise Filtering', status: 'complete', timestamp: '14:04', itemCount: 183 },
-    { name: 'AKS Storage', status: 'running' },
-    { name: 'BRD Generation', status: 'pending' },
-    { name: 'Validation', status: 'pending' },
-    { name: 'Export', status: 'pending' },
-];
-
-const SIGNAL_DATA = [
-    { label: 'Requirement', count: 82, color: '#3B82F6', className: 'badge-requirement' },
-    { label: 'Decision', count: 41, color: '#8B5CF6', className: 'badge-decision' },
-    { label: 'Feedback', count: 28, color: '#F59E0B', className: 'badge-feedback' },
-    { label: 'Timeline', count: 19, color: '#10B981', className: 'badge-timeline' },
-    { label: 'Noise', count: 13, color: '#6B7280', className: 'badge-noise' },
-];
-
-const STATS = [
-    { label: 'Sources Connected', value: '3', icon: Database, color: 'text-cyan-400', glow: 'shadow-glow-cyan' },
-    { label: 'Chunks Processed', value: '248', icon: TrendingUp, color: 'text-purple-400', glow: 'shadow-glow-purple' },
-    { label: 'Signals Extracted', value: '183', icon: Zap, color: 'text-amber-400', glow: 'shadow-glow-amber' },
-    { label: 'Validation Flags', value: '5', icon: AlertTriangle, color: 'text-red-400', glow: 'shadow-glow-red' },
-];
+interface SignalCounts {
+    total: number;
+    requirement: number;
+    decision: number;
+    feedback: number;
+    timeline: number;
+    noise: number;
+    flags: number;
+}
 
 // ─── Custom SVG Donut Chart ───────────────────────────────────────────────────
+
+const COLORS: Record<string, string> = {
+    Requirement: '#3B82F6',
+    Decision: '#8B5CF6',
+    Feedback: '#F59E0B',
+    Timeline: '#10B981',
+    Noise: '#6B7280',
+};
 
 function DonutChart({
     data,
     onSegmentClick,
     activeSegment,
 }: {
-    data: typeof SIGNAL_DATA;
+    data: Array<{ label: string; count: number; color: string; className: string }>;
     onSegmentClick: (label: string | null) => void;
     activeSegment: string | null;
 }) {
@@ -63,14 +59,13 @@ function DonutChart({
         <div className="flex flex-col items-center gap-4">
             <div className="relative">
                 <svg width="160" height="160" viewBox="0 0 160 160">
-                    {/* Background ring */}
                     <circle
                         cx={cx} cy={cy} r={r}
                         fill="none"
                         stroke="rgba(255,255,255,0.05)"
                         strokeWidth={stroke}
                     />
-                    {segments.map((seg) => (
+                    {total > 0 && segments.map((seg) => (
                         <circle
                             key={seg.label}
                             cx={cx} cy={cy} r={r}
@@ -90,7 +85,6 @@ function DonutChart({
                             onClick={() => onSegmentClick(activeSegment === seg.label ? null : seg.label)}
                         />
                     ))}
-                    {/* Centre text */}
                     <text x={cx} y={cy - 6} textAnchor="middle" className="fill-zinc-100" style={{ fontSize: 22, fontWeight: 700, fontFamily: 'Inter' }}>
                         {total}
                     </text>
@@ -112,7 +106,11 @@ function DonutChart({
                         <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: d.color }} />
                         <span className="text-xs text-zinc-300 flex-1">{d.label}</span>
                         <span className="text-xs font-mono text-zinc-500">{d.count}</span>
-                        <span className="text-[10px] text-zinc-600">{((d.count / total) * 100).toFixed(0)}%</span>
+                        <span className="text-[10px] text-zinc-600">
+                            {d.count > 0 && data.reduce((a, b) => a + b.count, 0) > 0
+                                ? ((d.count / data.reduce((a, b) => a + b.count, 0)) * 100).toFixed(0)
+                                : 0}%
+                        </span>
                     </button>
                 ))}
             </div>
@@ -122,8 +120,7 @@ function DonutChart({
 
 // ─── Contextual Action Centre ─────────────────────────────────────────────────
 
-function ActionCentre() {
-    // State: AKS running, BRD not started yet
+function ActionCentre({ hasBRDData }: { hasBRDData: boolean }) {
     return (
         <div className="space-y-3 h-full">
             <div className="glass-card p-4 rounded-xl border-amber-500/20 hover:border-amber-500/30 transition-all">
@@ -132,8 +129,8 @@ function ActionCentre() {
                         <Zap size={16} className="text-amber-400" />
                     </div>
                     <div>
-                        <p className="text-sm font-semibold text-amber-300">AKS Storage Running</p>
-                        <p className="text-xs text-zinc-500 mt-0.5">183 classified signals being indexed</p>
+                        <p className="text-sm font-semibold text-amber-300">Pipeline Ready</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">Signals classified and stored in AKS</p>
                     </div>
                 </div>
             </div>
@@ -144,14 +141,14 @@ function ActionCentre() {
                     <Link href="/brd">
                         <button className="btn-primary w-full flex items-center justify-center gap-2 text-sm py-2.5">
                             <FileText size={15} />
-                            Generate BRD Draft
+                            {hasBRDData ? 'View BRD Draft' : 'Generate BRD Draft'}
                             <ArrowRight size={14} className="ml-auto opacity-60" />
                         </button>
                     </Link>
                     <Link href="/signals">
                         <button className="btn-secondary w-full flex items-center justify-center gap-2 text-sm py-2 mt-1">
                             <AlertTriangle size={14} className="text-amber-400" />
-                            Review 5 Flagged Signals
+                            Review Signals
                         </button>
                     </Link>
                 </div>
@@ -160,8 +157,16 @@ function ActionCentre() {
             <div className="glass-card p-4 rounded-xl">
                 <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2 font-medium">Export Status</p>
                 <div className="flex items-center gap-2">
-                    <Download size={13} className="text-zinc-600" />
-                    <span className="text-xs text-zinc-500">Awaiting BRD generation</span>
+                    {hasBRDData ? (
+                        <Link href="/export" className="flex items-center gap-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                            <Download size={13} /> Download BRD
+                        </Link>
+                    ) : (
+                        <>
+                            <Download size={13} className="text-zinc-600" />
+                            <span className="text-xs text-zinc-500">Awaiting BRD generation</span>
+                        </>
+                    )}
                 </div>
             </div>
         </div>
@@ -171,7 +176,58 @@ function ActionCentre() {
 // ─── Main Dashboard Page ──────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+    const { activeSessionId } = useSessionStore();
+    const sessionId = activeSessionId ?? '';
+
     const [activeSegment, setActiveSegment] = useState<string | null>(null);
+    const [counts, setCounts] = useState<SignalCounts>({ total: 0, requirement: 0, decision: 0, feedback: 0, timeline: 0, noise: 0, flags: 0 });
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (!sessionId) return;
+        setLoading(true);
+        getChunks(sessionId, 'all')
+            .then(res => {
+                const c: SignalCounts = { total: 0, requirement: 0, decision: 0, feedback: 0, timeline: 0, noise: 0, flags: 0 };
+                res.chunks.forEach(ch => {
+                    if (ch.is_noise) { c.noise++; return; }
+                    c.total++;
+                    const label = (ch.signal_label ?? '').toLowerCase();
+                    if (label === 'requirement') c.requirement++;
+                    else if (label === 'decision') c.decision++;
+                    else if (label === 'stakeholder_feedback' || label === 'feedback') c.feedback++;
+                    else if (label === 'timeline_reference' || label === 'timeline') c.timeline++;
+                    if (ch.confidence < 0.7) c.flags++;
+                });
+                setCounts(c);
+            })
+            .catch(() => { })
+            .finally(() => setLoading(false));
+    }, [sessionId]);
+
+    const SIGNAL_DATA = [
+        { label: 'Requirement', count: counts.requirement, color: COLORS.Requirement, className: 'badge-requirement' },
+        { label: 'Decision', count: counts.decision, color: COLORS.Decision, className: 'badge-decision' },
+        { label: 'Feedback', count: counts.feedback, color: COLORS.Feedback, className: 'badge-feedback' },
+        { label: 'Timeline', count: counts.timeline, color: COLORS.Timeline, className: 'badge-timeline' },
+        { label: 'Noise', count: counts.noise, color: COLORS.Noise, className: 'badge-noise' },
+    ];
+
+    const STATS = [
+        { label: 'Sources Connected', value: sessionId ? '—' : '0', icon: Database, color: 'text-cyan-400', glow: 'shadow-glow-cyan' },
+        { label: 'Chunks Processed', value: loading ? '…' : String(counts.total + counts.noise), icon: TrendingUp, color: 'text-purple-400', glow: 'shadow-glow-purple' },
+        { label: 'Signals Extracted', value: loading ? '…' : String(counts.total), icon: Zap, color: 'text-amber-400', glow: 'shadow-glow-amber' },
+        { label: 'Low-Confidence', value: loading ? '…' : String(counts.flags), icon: AlertTriangle, color: 'text-red-400', glow: 'shadow-glow-red' },
+    ];
+
+    const PIPELINE_STAGES: StageInfo[] = [
+        { name: 'Ingestion', status: counts.total + counts.noise > 0 ? 'complete' : 'pending', itemCount: counts.total + counts.noise },
+        { name: 'Noise Filtering', status: counts.total + counts.noise > 0 ? 'complete' : 'pending', itemCount: counts.total },
+        { name: 'AKS Storage', status: counts.total > 0 ? 'complete' : 'pending' },
+        { name: 'BRD Generation', status: 'pending' },
+        { name: 'Validation', status: 'pending' },
+        { name: 'Export', status: 'pending' },
+    ];
 
     return (
         <div className="p-6 space-y-6 max-w-[1400px]">
@@ -179,7 +235,11 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-zinc-100">Session Dashboard</h1>
-                    <p className="text-sm text-zinc-500 mt-0.5">Hackfest Demo Session · 21 Feb 2026</p>
+                    <p className="text-sm text-zinc-500 mt-0.5">
+                        {sessionId
+                            ? <span className="font-mono">{sessionId.slice(0, 8)}… · {new Date().toLocaleDateString('en-IN')}</span>
+                            : 'No active session — create one to get started'}
+                    </p>
                 </div>
                 <Link href="/ingestion">
                     <button className="btn-primary flex items-center gap-2 text-sm">
@@ -199,11 +259,15 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between mb-5">
                     <div>
                         <h2 className="text-sm font-semibold text-zinc-200">Pipeline Status</h2>
-                        <p className="text-xs text-zinc-500 mt-0.5">6 stages · Stage 3 in progress</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">6 stages · derived from live session data</p>
                     </div>
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full glass-card text-[11px]">
-                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                        <span className="text-amber-300 font-medium">Running</span>
+                        {loading
+                            ? <><Loader2 size={10} className="animate-spin text-zinc-400" /><span className="text-zinc-400">Loading</span></>
+                            : counts.total > 0
+                                ? <><div className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-emerald-300 font-medium">Ready</span></>
+                                : <><div className="w-1.5 h-1.5 rounded-full bg-zinc-500" /><span className="text-zinc-400 font-medium">Idle</span></>
+                        }
                     </div>
                 </div>
                 <PipelineStepper stages={PIPELINE_STAGES} variant="expanded" />
@@ -253,11 +317,17 @@ export default function DashboardPage() {
                             </button>
                         )}
                     </div>
-                    <DonutChart
-                        data={SIGNAL_DATA}
-                        onSegmentClick={setActiveSegment}
-                        activeSegment={activeSegment}
-                    />
+                    {loading ? (
+                        <div className="flex items-center justify-center py-16 gap-2 text-zinc-500 text-xs">
+                            <Loader2 size={14} className="animate-spin" /> Loading signals…
+                        </div>
+                    ) : (
+                        <DonutChart
+                            data={SIGNAL_DATA}
+                            onSegmentClick={setActiveSegment}
+                            activeSegment={activeSegment}
+                        />
+                    )}
                     {activeSegment && (
                         <div className="mt-3 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300">
                             Signals filtered to <strong>{activeSegment}</strong> — go to{' '}
@@ -274,7 +344,7 @@ export default function DashboardPage() {
                     className="glass-card p-5 rounded-xl lg:col-span-2"
                 >
                     <h2 className="text-sm font-semibold text-zinc-200 mb-4">Action Centre</h2>
-                    <ActionCentre />
+                    <ActionCentre hasBRDData={counts.total > 0} />
                 </motion.div>
             </div>
         </div>

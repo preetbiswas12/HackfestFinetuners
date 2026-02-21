@@ -1,4 +1,10 @@
+/**
+ * useBRDStore.ts
+ * Zustand store for BRD sections and conflicts.
+ * Wired to the real FastAPI backend via apiClient.ts.
+ */
 import { create } from 'zustand';
+import { generateBRD, getBRD, editBRDSection, type BRDSections, type ValidationFlag } from '@/lib/apiClient';
 
 export interface BRDSection {
     id: string;
@@ -6,98 +12,106 @@ export interface BRDSection {
     content: string;
     citations: string[];
     lastEdited?: Date;
-}
-
-export interface Conflict {
-    id: string;
-    requirement1: string;
-    requirement2: string;
-    source1: string;
-    source2: string;
-    severity: 'high' | 'medium' | 'low';
-    resolved: boolean;
+    humanEdited?: boolean;
 }
 
 interface BRDStore {
     sections: BRDSection[];
-    conflicts: Conflict[];
-    updateSection: (id: string, content: string) => void;
-    addCitation: (sectionId: string, citation: string) => void;
-    resolveConflict: (id: string) => void;
-    generateSection: (sectionId: string) => Promise<void>;
+    flags: ValidationFlag[];
+    snapshotId: string | null;
+    loading: boolean;
+    generating: boolean;
+    error: string | null;
+    generateAll: (sessionId: string) => Promise<void>;
+    loadBRD: (sessionId: string) => Promise<void>;
+    updateSection: (sessionId: string, sectionId: string, content: string) => Promise<void>;
 }
 
-const defaultSections: BRDSection[] = [
-    { id: 'exec-summary', title: 'Executive Summary', content: '', citations: [] },
-    { id: 'objectives', title: 'Business Objectives', content: '', citations: [] },
-    { id: 'stakeholders', title: 'Stakeholder Analysis', content: '', citations: [] },
-    { id: 'functional', title: 'Functional Requirements', content: '', citations: [] },
-    { id: 'non-functional', title: 'Non-Functional Requirements', content: '', citations: [] },
-    { id: 'assumptions', title: 'Assumptions & Constraints', content: '', citations: [] },
-    { id: 'metrics', title: 'Success Metrics', content: '', citations: [] },
-    { id: 'timeline', title: 'Timeline & Milestones', content: '', citations: [] }
+const SECTION_META: { id: keyof BRDSections; title: string }[] = [
+    { id: 'executive_summary', title: 'Executive Summary' },
+    { id: 'functional_requirements', title: 'Functional Requirements' },
+    { id: 'stakeholder_analysis', title: 'Stakeholder Analysis' },
+    { id: 'timeline', title: 'Timeline & Milestones' },
+    { id: 'decisions', title: 'Key Decisions' },
+    { id: 'assumptions', title: 'Assumptions & Constraints' },
+    { id: 'success_metrics', title: 'Success Metrics' },
 ];
 
-export const useBRDStore = create<BRDStore>((set) => ({
-    sections: defaultSections,
-    conflicts: [
-        {
-            id: '1',
-            requirement1: 'System must support 100 concurrent users',
-            requirement2: 'Initial launch limited to 50 users for beta testing',
-            source1: 'Email from CTO (Dec 15)',
-            source2: 'Slack #general (Dec 20)',
-            severity: 'medium',
-            resolved: false
-        },
-        {
-            id: '2',
-            requirement1: 'Mobile app required for Q1 launch',
-            requirement2: 'Focus exclusively on web platform first',
-            source1: 'Product meeting notes',
-            source2: 'Engineering roadmap document',
-            severity: 'high',
-            resolved: false
+function sectionsFromAPI(raw: BRDSections): BRDSection[] {
+    return SECTION_META.map(({ id, title }) => ({
+        id,
+        title,
+        content: raw[id] ?? '',
+        citations: [],
+    }));
+}
+
+export const useBRDStore = create<BRDStore>((set, get) => ({
+    sections: SECTION_META.map(({ id, title }) => ({ id, title, content: '', citations: [] })),
+    flags: [],
+    snapshotId: null,
+    loading: false,
+    generating: false,
+    error: null,
+
+    /**
+     * Trigger BRD generation.
+     * Shows a generating state — this call takes 30-90 seconds.
+     */
+    generateAll: async (sessionId) => {
+        set({ generating: true, error: null });
+        try {
+            const res = await generateBRD(sessionId);
+            set({ snapshotId: res.snapshot_id });
+            // Once done, immediately load the results
+            await get().loadBRD(sessionId);
+        } catch (e) {
+            set({ error: e instanceof Error ? e.message : 'Generation failed' });
+        } finally {
+            set({ generating: false });
         }
-    ],
+    },
 
-    updateSection: (id, content) =>
-        set((state) => ({
-            sections: state.sections.map((s) =>
-                s.id === id ? { ...s, content, lastEdited: new Date() } : s
-            )
-        })),
+    /**
+     * Load existing BRD sections from the DB (does not re-generate).
+     */
+    loadBRD: async (sessionId) => {
+        set({ loading: true, error: null });
+        try {
+            const data = await getBRD(sessionId);
+            set({
+                sections: sectionsFromAPI(data.sections),
+                flags: data.flags,
+            });
+        } catch (e) {
+            set({ error: e instanceof Error ? e.message : 'Failed to load BRD' });
+        } finally {
+            set({ loading: false });
+        }
+    },
 
-    addCitation: (sectionId, citation) =>
-        set((state) => ({
-            sections: state.sections.map((s) =>
-                s.id === sectionId ? { ...s, citations: [...s.citations, citation] } : s
-            )
-        })),
-
-    resolveConflict: (id) =>
-        set((state) => ({
-            conflicts: state.conflicts.map((c) =>
-                c.id === id ? { ...c, resolved: true } : c
-            )
-        })),
-
-    generateSection: async (sectionId) => {
-        // Simulate AI generation
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        const demoContent: Record<string, string> = {
-            'exec-summary': 'This project aims to modernize the customer portal...',
-            'objectives': '1. Improve user experience\n2. Reduce support tickets by 40%...',
-            'functional': 'FR-001: User authentication via OAuth2\nFR-002: Dashboard with real-time data...'
-        };
-
-        set((state) => ({
-            sections: state.sections.map((s) =>
-                s.id === sectionId
-                    ? { ...s, content: demoContent[sectionId] || 'Generated content...', lastEdited: new Date() }
-                    : s
-            )
-        }));
-    }
+    /**
+     * Save a human-edited section and lock it from AI overwrite.
+     */
+    updateSection: async (sessionId, sectionId, content) => {
+        const { snapshotId } = get();
+        if (!snapshotId) {
+            set({ error: 'No snapshot ID — generate the BRD first.' });
+            return;
+        }
+        set({ loading: true, error: null });
+        try {
+            await editBRDSection(sessionId, sectionId, content, snapshotId);
+            // Optimistically update local state
+            set((state) => ({
+                sections: state.sections.map((s) =>
+                    s.id === sectionId ? { ...s, content, lastEdited: new Date(), humanEdited: true } : s
+                ),
+            }));
+        } catch (e) {
+            set({ error: e instanceof Error ? e.message : 'Save failed' });
+        } finally {
+            set({ loading: false });
+        }
+    },
 }));

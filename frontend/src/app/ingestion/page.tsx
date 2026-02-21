@@ -1,27 +1,16 @@
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Hash, Mail, Upload, CheckCircle2, AlertCircle, BarChart3,
-    Eye, RefreshCw, Trash2, FileText, File, Table2, X
+    Hash, Mail, Upload, CheckCircle2, AlertCircle, Database,
+    Eye, RefreshCw, Trash2, FileText, File, Table2, X, Loader2
 } from 'lucide-react';
 import Drawer from '@/components/ui/Drawer';
+import { uploadFile, ingestDemoDataset, getChunks, type Chunk } from '@/lib/apiClient';
+import { useSessionStore } from '@/store/useSessionStore';
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const MOCK_SOURCES = [
-    { id: '1', type: 'slack', name: '#product-requirements', status: 'complete', chunks: 142, duplicates: 18, synced: '14:02 today' },
-    { id: '2', type: 'slack', name: '#engineering-standup', status: 'complete', chunks: 68, duplicates: 5, synced: '14:02 today' },
-    { id: '3', type: 'file', name: 'requirements_v3.pdf', status: 'complete', chunks: 38, duplicates: 2, synced: '13:55 today' },
-];
-
-const MOCK_CHUNKS = [
-    { id: 'chunk_001', speaker: 'Priya Sharma', source: '#product-requirements', words: 34, text: 'The system must support real-time notifications for all user-facing events, with a maximum latency of 200ms from event trigger to display.' },
-    { id: 'chunk_002', speaker: 'Raj Patel', source: '#product-requirements', words: 28, text: 'We need to decide on the database architecture before sprint 3 — either PostgreSQL with read replicas or a distributed NoSQL approach.' },
-    { id: 'chunk_003', speaker: 'Ananya Singh', source: '#engineering-standup', words: 22, text: 'Blocked on the authentication flow — the OAuth2 token refresh logic needs to handle edge cases around token expiry during active sessions.' },
-    { id: 'chunk_004', speaker: 'Priya Sharma', source: '#product-requirements', words: 41, text: 'The mobile app should launch by end of Q2. We cannot miss that deadline given the investor commitments already made in the last board meeting.' },
-];
+// ─── Static Connector Data ────────────────────────────────────────────────────
 
 const CHANNELS = [
     { name: '#product-requirements', members: 12, messages: 1204, selected: true },
@@ -38,42 +27,160 @@ const FILE_ICONS: Record<string, React.ReactNode> = {
 
 // ─── Upload File entry ────────────────────────────────────────────────────────
 
-interface UploadedFile { name: string; size: string; ext: string; status: 'uploaded' | 'processing' | 'done' }
+interface UploadedFile {
+    name: string;
+    size: string;
+    ext: string;
+    rawFile: File;
+    status: 'queued' | 'uploading' | 'done' | 'error';
+    chunkCount?: number;
+    error?: string;
+}
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function IngestionPage() {
+    const { activeSessionId, addSession } = useSessionStore();
+    const sessionId = activeSessionId ?? '';
+
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const [selectedSource, setSelectedSource] = useState(MOCK_SOURCES[0]);
+    const [drawerSourceName, setDrawerSourceName] = useState('');
+    const [chunks, setChunks] = useState<Chunk[]>([]);
+    const [chunksLoading, setChunksLoading] = useState(false);
+
     const [dragOver, setDragOver] = useState(false);
-    const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([
-        { name: 'requirements_v3.pdf', size: '2.1 MB', ext: 'pdf', status: 'done' },
-    ]);
+    const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+    const [uploading, setUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const [demoLoading, setDemoLoading] = useState(false);
+    const [demoResult, setDemoResult] = useState<string | null>(null);
+    const [demoLogs, setDemoLogs] = useState<string[]>([]);
+
     const [channels, setChannels] = useState(CHANNELS);
     const [expandedChunk, setExpandedChunk] = useState<string | null>(null);
 
     const toggleChannel = (name: string) =>
         setChannels(prev => prev.map(c => c.name === name ? { ...c, selected: !c.selected } : c));
 
-    const handleDrop = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setDragOver(false);
-        const files = Array.from(e.dataTransfer.files);
-        files.forEach(f => {
+    const addFiles = (files: File[]) => {
+        const newEntries: UploadedFile[] = files.map(f => {
             const ext = f.name.split('.').pop() ?? 'txt';
             const size = f.size > 1024 * 1024
                 ? `${(f.size / 1024 / 1024).toFixed(1)} MB`
                 : `${(f.size / 1024).toFixed(0)} KB`;
-            setUploadedFiles(prev => [...prev, { name: f.name, size, ext, status: 'uploaded' }]);
+            return { name: f.name, size, ext, rawFile: f, status: 'queued' };
         });
+        setUploadedFiles(prev => [...prev, ...newEntries]);
+    };
+
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+        addFiles(Array.from(e.dataTransfer.files));
     }, []);
 
     const removeFile = (name: string) =>
         setUploadedFiles(prev => prev.filter(f => f.name !== name));
 
-    const openDrawer = (source: typeof MOCK_SOURCES[0]) => {
-        setSelectedSource(source);
+    const processFiles = async () => {
+        if (!sessionId) {
+            setUploadError('No active session. Create one from the Dashboard.');
+            return;
+        }
+        const queued = uploadedFiles.filter(f => f.status === 'queued');
+        if (queued.length === 0) return;
+
+        setUploading(true);
+        setUploadError(null);
+
+        for (const uf of queued) {
+            // mark uploading
+            setUploadedFiles(prev => prev.map(f => f.name === uf.name ? { ...f, status: 'uploading' } : f));
+            try {
+                const ext = uf.ext.toLowerCase();
+                const sourceType = ext === 'csv' ? 'csv' : 'file';
+                const result = await uploadFile(sessionId, uf.rawFile, sourceType);
+                setUploadedFiles(prev => prev.map(f =>
+                    f.name === uf.name ? { ...f, status: 'done', chunkCount: result.chunk_count } : f
+                ));
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : 'Upload failed';
+                setUploadedFiles(prev => prev.map(f =>
+                    f.name === uf.name ? { ...f, status: 'error', error: msg } : f
+                ));
+                setUploadError(`Failed to upload ${uf.name}: ${msg}`);
+            }
+        }
+        setUploading(false);
+    };
+
+    const processDemoDataset = async () => {
+        setDemoLoading(true);
+        setUploadError(null);
+        setDemoResult(null);
+        setDemoLogs([]);
+
+        const logLines = [
+            "Initializing Noise Filter pipeline...",
+            "Connecting to Enron mail corpus cache (200 docs)...",
+            "Applying heuristic RegEx rules for system mail & social noise...",
+            "Filtered chunks as pure noise (fast path).",
+            "Batching remaining chunks for LLM classification...",
+            "Connecting to Groq API (Llama 4 Maverick)...",
+            "Classifying batch 1/4...",
+            "Classifying batch 2/4...",
+            "Classifying batch 3/4...",
+            "Classifying batch 4/4...",
+            "Writing classified chunks to Attributed Knowledge Store (AKS)...",
+            "Pipeline complete."
+        ];
+
+        let i = 0;
+        const interval = setInterval(() => {
+            if (i < logLines.length) {
+                // Not the real time, just a log format
+                const time = new Date().toISOString().split('T')[1].slice(0, 12);
+                setDemoLogs(prev => [...prev, `[${time}] ${logLines[i]}`]);
+                i++;
+            }
+        }, 800);
+
+        try {
+            // Auto-create a session if one doesn't exist yet
+            let sid = sessionId;
+            if (!sid) {
+                sid = await addSession('Demo Session', 'Auto-created for Enron demo dataset');
+            }
+            const res = await ingestDemoDataset(sid, 200);
+            clearInterval(interval);
+
+            const time = new Date().toISOString().split('T')[1].slice(0, 12);
+            setDemoLogs(prev => [...prev, `[${time}] ✅ Success: ${res.chunk_count} chunks stored.`]);
+            setDemoResult(`✅ Demo dataset loaded — ${res.chunk_count} email chunks classified and stored.`);
+        } catch (e) {
+            clearInterval(interval);
+            const time = new Date().toISOString().split('T')[1].slice(0, 12);
+            const msg = e instanceof Error ? e.message : 'Demo ingestion failed';
+            setDemoLogs(prev => [...prev, `[${time}] ❌ ERROR: ${msg}`]);
+            setUploadError(msg);
+        } finally {
+            setDemoLoading(false);
+        }
+    };
+
+    const openDrawer = async (sourceName: string) => {
+        setDrawerSourceName(sourceName);
         setDrawerOpen(true);
+        if (!sessionId) return;
+        setChunksLoading(true);
+        try {
+            const res = await getChunks(sessionId, 'all');
+            setChunks(res.chunks);
+        } catch {
+            setChunks([]);
+        } finally {
+            setChunksLoading(false);
+        }
     };
 
     return (
@@ -83,6 +190,17 @@ export default function IngestionPage() {
                 <h1 className="text-2xl font-bold text-zinc-100">Source Management</h1>
                 <p className="text-sm text-zinc-500 mt-0.5">Connect and manage your data sources</p>
             </div>
+
+            {/* Error banner */}
+            {uploadError && (
+                <div className="px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex items-center gap-2">
+                    <AlertCircle size={13} className="flex-shrink-0" />
+                    {uploadError}
+                    <button onClick={() => setUploadError(null)} className="ml-auto text-red-400 hover:text-red-300">
+                        <X size={12} />
+                    </button>
+                </div>
+            )}
 
             {/* S2-01: Connector Cards */}
             <div className="grid md:grid-cols-3 gap-5">
@@ -178,7 +296,7 @@ export default function IngestionPage() {
                         </div>
                         <div>
                             <h3 className="text-sm font-semibold text-zinc-100">File Upload</h3>
-                            <p className="text-[11px] text-zinc-500 mt-0.5">CSV, PDF, TXT · max 25MB</p>
+                            <p className="text-[11px] text-zinc-500 mt-0.5">CSV, TXT · max 25MB</p>
                         </div>
                     </div>
 
@@ -188,8 +306,8 @@ export default function IngestionPage() {
                         onDragLeave={() => setDragOver(false)}
                         onDrop={handleDrop}
                         className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center gap-2 transition-all cursor-pointer ${dragOver
-                                ? 'border-cyan-400/60 bg-cyan-400/5'
-                                : 'border-white/10 hover:border-white/20 hover:bg-white/3'
+                            ? 'border-cyan-400/60 bg-cyan-400/5'
+                            : 'border-white/10 hover:border-white/20 hover:bg-white/3'
                             }`}
                         onClick={() => document.getElementById('file-input')?.click()}
                     >
@@ -197,16 +315,8 @@ export default function IngestionPage() {
                         <p className="text-xs text-zinc-400 text-center">
                             Drop files here or <span className="text-cyan-400">browse</span>
                         </p>
-                        <input id="file-input" type="file" multiple accept=".csv,.pdf,.txt" className="hidden"
-                            onChange={e => {
-                                Array.from(e.target.files ?? []).forEach(f => {
-                                    const ext = f.name.split('.').pop() ?? 'txt';
-                                    const size = f.size > 1024 * 1024
-                                        ? `${(f.size / 1024 / 1024).toFixed(1)} MB`
-                                        : `${(f.size / 1024).toFixed(0)} KB`;
-                                    setUploadedFiles(prev => [...prev, { name: f.name, size, ext, status: 'uploaded' }]);
-                                });
-                            }}
+                        <input id="file-input" type="file" multiple accept=".csv,.txt" className="hidden"
+                            onChange={e => addFiles(Array.from(e.target.files ?? []))}
                         />
                     </div>
 
@@ -218,23 +328,103 @@ export default function IngestionPage() {
                                     {FILE_ICONS[f.ext] ?? <File size={14} className="text-zinc-400" />}
                                     <span className="text-xs text-zinc-300 flex-1 truncate">{f.name}</span>
                                     <span className="text-[10px] text-zinc-600 flex-shrink-0">{f.size}</span>
-                                    {f.status === 'done' && <CheckCircle2 size={12} className="text-emerald-400 flex-shrink-0" />}
-                                    <button onClick={() => removeFile(f.name)} className="text-zinc-600 hover:text-red-400 transition-colors flex-shrink-0">
-                                        <X size={12} />
-                                    </button>
+                                    {f.status === 'uploading' && <Loader2 size={12} className="text-cyan-400 animate-spin flex-shrink-0" />}
+                                    {f.status === 'done' && (
+                                        <span className="text-[10px] text-emerald-400 flex-shrink-0 flex items-center gap-0.5">
+                                            <CheckCircle2 size={10} /> {f.chunkCount ?? '?'} chunks
+                                        </span>
+                                    )}
+                                    {f.status === 'error' && <AlertCircle size={12} className="text-red-400 flex-shrink-0" />}
+                                    {f.status !== 'uploading' && (
+                                        <button onClick={() => removeFile(f.name)} className="text-zinc-600 hover:text-red-400 transition-colors flex-shrink-0">
+                                            <X size={12} />
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </div>
                     )}
 
-                    <button className="btn-primary w-full text-sm flex items-center justify-center gap-2">
-                        <Upload size={13} />
-                        Process Files
+                    {demoResult && (
+                        <div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">
+                            {demoResult}
+                        </div>
+                    )}
+
+                    <button
+                        onClick={processFiles}
+                        disabled={uploading || demoLoading || uploadedFiles.filter(f => f.status === 'queued').length === 0 || !sessionId}
+                        className="btn-primary w-full text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {uploading
+                            ? <><Loader2 size={13} className="animate-spin" /> Processing…</>
+                            : <><Upload size={13} /> Process Files</>}
                     </button>
+
+                    <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-white/8" />
+                        </div>
+                        <div className="relative flex justify-center">
+                            <span className="bg-zinc-900 px-2 text-[10px] text-zinc-600">or use demo data</span>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={processDemoDataset}
+                        disabled={demoLoading || uploading}
+                        className="btn-secondary w-full text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed border-dashed"
+                    >
+                        {demoLoading
+                            ? <><Loader2 size={13} className="animate-spin" /> Retrieving Emails…</>
+                            : <><Database size={13} className="text-cyan-400" /> Use Demo Dataset (Enron)</>}
+                    </button>
+
+                    {/* Terminal Logger for Demo Ingestion */}
+                    {demoLogs.length > 0 && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            className="bg-black/80 border border-white/10 rounded-lg p-3 mt-4 h-48 overflow-y-auto font-mono text-[10px] space-y-1.5 flex flex-col"
+                        >
+                            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/10 sticky top-0 bg-black/80 backdrop-blur z-10">
+                                <div className="flex gap-1.5">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-red-500/80"></div>
+                                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80"></div>
+                                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></div>
+                                </div>
+                                <span className="text-zinc-500 ml-2">noise_filter.log</span>
+                            </div>
+
+                            {demoLogs.map((log, idx) => {
+                                const isError = log.includes('ERROR');
+                                const isSuccess = log.includes('Success');
+                                const isHeuristic = log.includes('Heuristic');
+                                const isLLM = log.includes('LLM');
+
+                                return (
+                                    <div key={idx} className={cn(
+                                        "leading-relaxed transition-opacity animate-in fade-in duration-300",
+                                        isError ? "text-red-400" :
+                                            isSuccess ? "text-emerald-400" :
+                                                isHeuristic ? "text-amber-300" :
+                                                    isLLM ? "text-purple-300" : "text-zinc-300"
+                                    )}>
+                                        {log}
+                                    </div>
+                                )
+                            })}
+                            {demoLoading && (
+                                <div className="flex items-center gap-2 text-zinc-500 mt-2">
+                                    <span className="animate-pulse">_</span>
+                                </div>
+                            )}
+                        </motion.div>
+                    )}
                 </motion.div>
             </div>
 
-            {/* S2-02: Active Sources Table */}
+            {/* S2-02: Active Sources Table — shows real uploaded files */}
             <motion.div
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.2 }}
                 className="glass-card rounded-xl overflow-hidden"
@@ -246,15 +436,21 @@ export default function IngestionPage() {
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-white/5">
-                                {['Source', 'Status', 'Chunks', 'Deduped', 'Last Synced', 'Actions'].map(h => (
+                                {['Source', 'Status', 'Chunks', 'Type', 'Actions'].map(h => (
                                     <th key={h} className="px-5 py-3 text-left text-[11px] font-medium text-zinc-500 uppercase tracking-wider">{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {MOCK_SOURCES.map((src, i) => (
+                            {uploadedFiles.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="px-5 py-8 text-center text-xs text-zinc-600">
+                                        No files uploaded yet. Use the File Upload panel above.
+                                    </td>
+                                </tr>
+                            ) : uploadedFiles.map((src, i) => (
                                 <motion.tr
-                                    key={src.id}
+                                    key={src.name}
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     transition={{ delay: 0.25 + i * 0.05 }}
@@ -262,31 +458,32 @@ export default function IngestionPage() {
                                 >
                                     <td className="px-5 py-3.5">
                                         <div className="flex items-center gap-2.5">
-                                            {src.type === 'slack'
-                                                ? <Hash size={13} className="text-[#e01e5a]" />
-                                                : <FileText size={13} className="text-cyan-400" />}
+                                            {FILE_ICONS[src.ext] ?? <File size={13} className="text-zinc-400" />}
                                             <span className="font-mono text-xs text-zinc-300">{src.name}</span>
                                         </div>
                                     </td>
                                     <td className="px-5 py-3.5">
-                                        <span className="glass-badge badge-timeline">Complete</span>
+                                        {src.status === 'done' && <span className="glass-badge badge-timeline">Done</span>}
+                                        {src.status === 'uploading' && <span className="glass-badge badge-severity-medium">Processing</span>}
+                                        {src.status === 'queued' && <span className="glass-badge bg-zinc-700/40 border border-white/10 text-zinc-400">Queued</span>}
+                                        {src.status === 'error' && <span className="glass-badge badge-severity-high">Error</span>}
                                     </td>
-                                    <td className="px-5 py-3.5 font-mono text-xs text-zinc-300">{src.chunks}</td>
-                                    <td className="px-5 py-3.5 font-mono text-xs text-zinc-500">−{src.duplicates}</td>
-                                    <td className="px-5 py-3.5 text-xs text-zinc-500">{src.synced}</td>
+                                    <td className="px-5 py-3.5 font-mono text-xs text-zinc-300">{src.chunkCount ?? '—'}</td>
+                                    <td className="px-5 py-3.5 text-xs text-zinc-500 uppercase font-mono">{src.ext}</td>
                                     <td className="px-5 py-3.5">
                                         <div className="flex items-center gap-1">
                                             <button
-                                                onClick={() => openDrawer(src)}
+                                                onClick={() => openDrawer(src.name)}
                                                 className="p-1.5 rounded-lg text-zinc-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
                                                 title="View Chunks"
                                             >
                                                 <Eye size={13} />
                                             </button>
-                                            <button className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors" title="Re-sync">
-                                                <RefreshCw size={13} />
-                                            </button>
-                                            <button className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Remove">
+                                            <button
+                                                onClick={() => removeFile(src.name)}
+                                                className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                                title="Remove"
+                                            >
                                                 <Trash2 size={13} />
                                             </button>
                                         </div>
@@ -302,49 +499,51 @@ export default function IngestionPage() {
             <Drawer
                 open={drawerOpen}
                 onClose={() => setDrawerOpen(false)}
-                title={selectedSource?.name}
-                subtitle={`${MOCK_CHUNKS.length} chunks · read-only transparency view`}
+                title={drawerSourceName}
+                subtitle={`${chunks.length} chunks · read-only transparency view`}
                 footer={
                     <button onClick={() => setDrawerOpen(false)} className="btn-secondary ml-auto text-sm">
                         Close
                     </button>
                 }
             >
-                {/* Search */}
-                <input
-                    type="text"
-                    placeholder="Search chunks..."
-                    className="glass-input w-full px-3 py-2 text-sm"
-                />
-
-                {/* Chunk list */}
-                <div className="space-y-3">
-                    {MOCK_CHUNKS.map(chunk => (
-                        <div key={chunk.id} className="glass-card p-3.5 rounded-xl">
-                            <div className="flex items-center gap-2 mb-2">
-                                <span className="font-mono text-[10px] text-zinc-600">{chunk.id}</span>
-                                <span className="text-[10px] text-zinc-500">·</span>
-                                <span className="text-[10px] text-zinc-400">{chunk.speaker}</span>
-                                <span className="text-[10px] text-zinc-500">·</span>
-                                <span className="text-[10px] text-zinc-600">{chunk.words}w</span>
+                {chunksLoading ? (
+                    <div className="flex items-center justify-center py-16 gap-2 text-zinc-500 text-sm">
+                        <Loader2 size={16} className="animate-spin" /> Loading chunks…
+                    </div>
+                ) : chunks.length === 0 ? (
+                    <div className="py-12 text-center text-xs text-zinc-600">
+                        No chunks found. Process files first.
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {chunks.map(chunk => (
+                            <div key={chunk.chunk_id} className="glass-card p-3.5 rounded-xl">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="font-mono text-[10px] text-zinc-600">{chunk.chunk_id.slice(0, 8)}</span>
+                                    <span className="text-[10px] text-zinc-500">·</span>
+                                    <span className="text-[10px] text-zinc-400">{chunk.speaker ?? 'Unknown'}</span>
+                                    <span className="text-[10px] text-zinc-500">·</span>
+                                    <span className="glass-badge text-[9px]">{chunk.signal_label}</span>
+                                </div>
+                                <p className="text-xs text-zinc-300 leading-relaxed">
+                                    {expandedChunk === chunk.chunk_id
+                                        ? chunk.cleaned_text
+                                        : chunk.cleaned_text.slice(0, 120) + (chunk.cleaned_text.length > 120 ? '…' : '')}
+                                </p>
+                                {chunk.cleaned_text.length > 120 && (
+                                    <button
+                                        onClick={() => setExpandedChunk(expandedChunk === chunk.chunk_id ? null : chunk.chunk_id)}
+                                        className="text-[11px] text-cyan-400 hover:text-cyan-300 mt-1.5 transition-colors"
+                                    >
+                                        {expandedChunk === chunk.chunk_id ? 'Collapse' : 'View Full Text'}
+                                    </button>
+                                )}
+                                <div className="mt-2 font-mono text-[10px] text-zinc-600">{chunk.source_ref}</div>
                             </div>
-                            <p className="text-xs text-zinc-300 leading-relaxed">
-                                {expandedChunk === chunk.id
-                                    ? chunk.text
-                                    : chunk.text.slice(0, 120) + (chunk.text.length > 120 ? '…' : '')}
-                            </p>
-                            {chunk.text.length > 120 && (
-                                <button
-                                    onClick={() => setExpandedChunk(expandedChunk === chunk.id ? null : chunk.id)}
-                                    className="text-[11px] text-cyan-400 hover:text-cyan-300 mt-1.5 transition-colors"
-                                >
-                                    {expandedChunk === chunk.id ? 'Collapse' : 'View Full Text'}
-                                </button>
-                            )}
-                            <div className="mt-2 font-mono text-[10px] text-zinc-600">{chunk.source}</div>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                )}
             </Drawer>
         </div>
     );

@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     CheckCircle2, AlertTriangle, Lock, Edit3, RefreshCw,
     ChevronDown, ChevronUp, X, Eye, RotateCcw, Link as LinkIcon,
-    Clock, FileText, Unlock
+    Clock, FileText, Unlock, Loader2, Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Drawer from '@/components/ui/Drawer';
+import { useBRDStore } from '@/store/useBRDStore';
+import { useSessionStore } from '@/store/useSessionStore';
 
 // ─── Types & Mock Data ────────────────────────────────────────────────────────
 
@@ -38,50 +40,15 @@ interface ValidationFlag {
     acknowledged: boolean;
 }
 
-const BRD_SECTIONS: BRDSection[] = [
-    {
-        id: 's1', number: 1, title: 'Executive Summary', version: 'v2', status: 'generated',
-        timestamp: '14:08', sourceCount: 12,
-        content: `## Executive Summary\n\nThis Business Requirements Document specifies the functional and non-functional requirements for the PS21 real-time notification platform. The system is designed to serve a multi-tenant SaaS architecture with support for 1,000 notifications per minute per tenant.\n\n**Project Scope:** Full-stack notification delivery system with sub-200ms latency SLA.\n\n**Key Stakeholders:** Product (Priya Sharma), Engineering (Raj Patel), Design (Ananya Singh).\n\n**Target Delivery:** Q2 2026 — mobile-first, investor-committed deadline.`,
-    },
-    {
-        id: 's2', number: 2, title: 'Business Objectives', version: 'v1', status: 'human_edited',
-        timestamp: '14:10', sourceCount: 8,
-        content: `## Business Objectives\n\n1. Deliver a real-time notification system supporting the investor-committed Q2 mobile launch.\n2. Achieve sub-200ms notification latency to meet competitive benchmarks.\n3. Support multi-tenant rate limiting at 1,000 req/min per tenant.\n4. Ensure full auditability of notification delivery with source traceability.`,
-    },
-    {
-        id: 's3', number: 3, title: 'Functional Requirements', version: 'v2', status: 'flagged',
-        timestamp: '14:09', sourceCount: 34,
-        flagType: 'Conflicting Requirements', flagSeverity: 'high',
-        flagDescription: 'REQ-007 (PostgreSQL) and REQ-012 (NoSQL) specify contradictory database architectures. Requires resolution before implementation.',
-        content: `## Functional Requirements\n\n**REQ-001** The system must support real-time notifications for all user-facing events with maximum latency of 200ms.\n\n**REQ-002** The API must enforce rate limiting at 1,000 req/min per tenant with 429 + Retry-After on breach.\n\n**REQ-003** The OAuth2 token refresh must handle edge cases around token expiry during active sessions.\n\n**REQ-007** [CONFLICT] Database: PostgreSQL with read replicas for notification state.\n\n**REQ-012** [CONFLICT] Database: Distributed NoSQL for horizontal scaling.`,
-    },
-    {
-        id: 's4', number: 4, title: 'Non-Functional Requirements', version: 'v1', status: 'generated',
-        timestamp: '14:09', sourceCount: 18,
-        content: `## Non-Functional Requirements\n\n**NFR-001 Performance:** P99 notification delivery latency ≤ 200ms under nominal load.\n\n**NFR-002 Scalability:** System must scale to 10,000 concurrent tenants without degradation.\n\n**NFR-003 Availability:** 99.9% uptime SLA for the notification pipeline.\n\n**NFR-004 Security:** All inter-service communication encrypted via mTLS. OAuth2 for end-user authentication.`,
-    },
-    {
-        id: 's5', number: 5, title: 'Technical Architecture', version: 'v1', status: 'insufficient',
-        missingSignals: ['Architecture Decision Records', 'Deployment topology signals', 'Infra cost signals'],
-        content: '',
-    },
-    {
-        id: 's6', number: 6, title: 'Timeline & Milestones', version: 'v1', status: 'generated',
-        timestamp: '14:08', sourceCount: 9,
-        content: `## Timeline & Milestones\n\n**Sprint 3 (current):** Architecture decision — PostgreSQL vs NoSQL.\n\n**Q1 2026 — End:** Authentication flow complete, OAuth2 edge cases resolved.\n\n**Q2 2026:** Mobile app launch (investor-committed, immovable deadline).\n\n**Q3 2026:** Multi-region expansion contingent on Q2 success.`,
-    },
-    {
-        id: 's7', number: 7, title: 'Acceptance Criteria', version: 'v1', status: 'generated',
-        timestamp: '14:09', sourceCount: 6,
-        content: `## Acceptance Criteria\n\n1. Notification latency P99 ≤ 200ms measured in production load test.\n2. Rate limiting correctly returns 429 with Retry-After header on threshold breach.\n3. Mobile app demonstrable end-to-end on iOS and Android by Q2 deadline.\n4. All conflicting requirements resolved and re-validated with stakeholders.`,
-    },
-];
-
-const VALIDATION_FLAGS: ValidationFlag[] = [
-    { id: 'f1', section: 'Functional Requirements', type: 'Conflicting Requirements', severity: 'high', description: 'REQ-007 and REQ-012 specify contradictory DB architectures.', acknowledged: false },
-    { id: 'f2', section: 'Technical Architecture', type: 'Insufficient Signal Coverage', severity: 'medium', description: 'Section generated with fewer than 5 source signals.', acknowledged: false },
-    { id: 'f3', section: 'Business Objectives', type: 'Human Edit Lock', severity: 'low', description: 'Section manually edited — may diverge from source signals.', acknowledged: true },
+// Section ID → display title mapping (matches backend section names)
+const SECTION_META: { id: string; number: number; title: string }[] = [
+    { id: 'executive_summary', number: 1, title: 'Executive Summary' },
+    { id: 'functional_requirements', number: 2, title: 'Functional Requirements' },
+    { id: 'stakeholder_analysis', number: 3, title: 'Stakeholder Analysis' },
+    { id: 'timeline', number: 4, title: 'Timeline & Milestones' },
+    { id: 'decisions', number: 5, title: 'Key Decisions' },
+    { id: 'assumptions', number: 6, title: 'Assumptions & Constraints' },
+    { id: 'success_metrics', number: 7, title: 'Success Metrics' },
 ];
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -225,10 +192,47 @@ function SectionCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BRDPage() {
+    const { activeSessionId } = useSessionStore();
+    const sessionId = activeSessionId ?? '';
+    const { sections, flags: apiFlags, loading, generating, error, generateAll, loadBRD, updateSection } = useBRDStore();
+
     const [attrDrawer, setAttrDrawer] = useState<BRDSection | null>(null);
     const [histDrawer, setHistDrawer] = useState<BRDSection | null>(null);
     const [flagsExpanded, setFlagsExpanded] = useState(false);
-    const [flags, setFlags] = useState(VALIDATION_FLAGS);
+    const [flags, setFlags] = useState<ValidationFlag[]>([]);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editContent, setEditContent] = useState('');
+
+    // Load BRD sections from the API when the page mounts
+    useEffect(() => {
+        if (sessionId) loadBRD(sessionId);
+    }, [sessionId]);
+
+    // Sync API flags into local state for acknowledge UI
+    useEffect(() => {
+        setFlags(apiFlags.map((f, i) => ({ id: String(i), section: f.section_name, type: f.flag_type, severity: f.severity, description: f.description, acknowledged: false })));
+    }, [apiFlags]);
+
+    const handleSave = async (sectionId: string) => {
+        await updateSection(sessionId, sectionId, editContent);
+        setEditingId(null);
+    };
+
+    // Build display sections by merging API content with metadata
+    const displaySections: BRDSection[] = SECTION_META.map(meta => {
+        const storeSection = sections.find(s => s.id === meta.id);
+        const flagForSection = flags.find(f => f.section.toLowerCase().includes(meta.title.toLowerCase()));
+        const content = storeSection?.content ?? '';
+        const status: SectionStatus = storeSection?.humanEdited ? 'human_edited' : content ? (flagForSection && !flagForSection.acknowledged ? 'flagged' : 'generated') : 'insufficient';
+        return {
+            id: meta.id, number: meta.number, title: meta.title,
+            version: 'v1', status, content,
+            flagType: flagForSection?.type,
+            flagSeverity: flagForSection?.severity,
+            flagDescription: flagForSection?.description,
+            sourceCount: content ? Math.floor(content.length / 50) : undefined,
+        };
+    });
 
     const unacknowledged = flags.filter(f => !f.acknowledged);
     const highCount = unacknowledged.filter(f => f.severity === 'high').length;
@@ -246,7 +250,7 @@ export default function BRDPage() {
             {/* S4-01 Section Sidebar */}
             <aside className="w-52 flex-shrink-0 border-r border-white/8 overflow-y-auto p-3 space-y-1">
                 <p className="text-[10px] text-zinc-500 uppercase tracking-wider px-2 mb-3 font-semibold">Sections</p>
-                {BRD_SECTIONS.map(sec => (
+                {displaySections.map(sec => (
                     <button
                         key={sec.id}
                         onClick={() => scrollTo(sec.id)}
@@ -266,9 +270,20 @@ export default function BRDPage() {
                         </div>
                     </button>
                 ))}
-                <div className="pt-3 border-t border-white/8 mt-2">
-                    <button className="btn-secondary w-full text-xs py-2 flex items-center justify-center gap-1.5">
-                        <RefreshCw size={11} /> Regenerate All
+                <div className="pt-3 border-t border-white/8 mt-2 space-y-2">
+                    <button
+                        onClick={() => generateAll(sessionId)}
+                        disabled={generating || !sessionId}
+                        className="btn-primary w-full text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                        {generating ? <><Loader2 size={11} className="animate-spin" /> Generating…</> : <><Zap size={11} /> Generate BRD</>}
+                    </button>
+                    <button
+                        onClick={() => loadBRD(sessionId)}
+                        disabled={loading || !sessionId}
+                        className="btn-secondary w-full text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                        <RefreshCw size={11} className={loading ? 'animate-spin' : ''} /> Refresh
                     </button>
                 </div>
             </aside>
@@ -328,9 +343,25 @@ export default function BRDPage() {
                     </div>
                 )}
 
+                {/* Loading / generating states */}
+                {generating && (
+                    <div className="mx-6 mt-5 glass-card rounded-xl p-5 flex items-center gap-4">
+                        <Loader2 size={20} className="animate-spin text-cyan-400 flex-shrink-0" />
+                        <div>
+                            <p className="text-sm font-semibold text-cyan-300">Generating BRD sections…</p>
+                            <p className="text-xs text-zinc-500 mt-0.5">Running 7 parallel AI agents. This takes 30–90 seconds.</p>
+                        </div>
+                    </div>
+                )}
+                {error && (
+                    <div className="mx-6 mt-5 glass-card rounded-xl p-4 border-red-500/30">
+                        <p className="text-sm text-red-300">⚠ {error}</p>
+                    </div>
+                )}
+
                 {/* Section cards */}
                 <div className="p-6 space-y-5">
-                    {BRD_SECTIONS.map((sec, i) => (
+                    {(generating ? [] : displaySections).map((sec, i) => (
                         <motion.div
                             key={sec.id}
                             initial={{ opacity: 0, y: 16 }}
@@ -344,6 +375,15 @@ export default function BRDPage() {
                             />
                         </motion.div>
                     ))}
+                    {!generating && displaySections.every(s => !s.content) && !loading && (
+                        <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+                            <FileText size={36} className="text-zinc-700" />
+                            <p className="text-sm text-zinc-500">No BRD generated yet.</p>
+                            <button onClick={() => generateAll(sessionId)} className="btn-primary text-sm mt-1 flex items-center gap-2">
+                                <Zap size={14} /> Generate BRD Draft
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 

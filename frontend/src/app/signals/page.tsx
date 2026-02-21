@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ChevronDown, X, Lock, User, Link as LinkIcon,
     CheckCircle, RotateCcw, Eye, AlertTriangle, BarChart2,
-    Filter, SortDesc
+    Filter, SortDesc, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getChunks, restoreChunk, type Chunk } from '@/lib/apiClient';
+import { useSessionStore } from '@/store/useSessionStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,53 +33,46 @@ interface SignalItem {
     downgradeReasons?: string[];
 }
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+// ─── API → UI type adapter ────────────────────────────────────────────────────
 
-const SIGNALS: SignalItem[] = [
-    {
-        id: 'sig_001', label: 'Requirement', path: 'LLM', confidence: 0.91,
-        speaker: 'Priya Sharma', source: '#product-requirements', timestamp: '14:02:11',
-        text: 'The system must support real-time notifications for all user-facing events, with a maximum latency of 200ms from event trigger to display.',
-        reasoning: 'Strong imperative language ("must"), quantified SLA (200ms), user-facing scope — all hallmarks of a functional requirement.',
-        status: 'active',
-    },
-    {
-        id: 'sig_002', label: 'Decision', path: 'LLM', confidence: 0.83,
-        speaker: 'Raj Patel', source: '#product-requirements', timestamp: '14:03:44',
-        text: 'We need to decide on the database architecture before sprint 3 — PostgreSQL with read replicas or a distributed NoSQL approach.',
-        reasoning: 'Architecture decision point with two named alternatives and a deadline reference.',
-        status: 'active',
-    },
-    {
-        id: 'sig_003', label: 'Feedback', path: 'Heuristic', confidence: 0.68,
-        speaker: 'Ananya Singh', source: '#engineering-standup', timestamp: '14:04:20',
-        text: 'Blocked on the authentication flow — the OAuth2 token refresh logic needs to handle edge cases around token expiry during active sessions.',
-        reasoning: 'Heuristic pattern matched "blocked" keyword. Classified as feedback/blocker.',
-        status: 'flagged',
-        downgradeReasons: ['weak statement', 'embedding outlier'],
-    },
-    {
-        id: 'sig_004', label: 'Timeline', path: 'LLM', confidence: 0.87,
-        speaker: 'Priya Sharma', source: '#product-requirements', timestamp: '14:05:01',
-        text: 'The mobile app must launch by end of Q2. We cannot miss that deadline given the investor commitments already made in the last board meeting.',
-        reasoning: 'Explicit deadline (Q2) with organisational pressure context — strong timeline signal.',
-        status: 'active',
-    },
-    {
-        id: 'sig_005', label: 'Noise', path: 'Domain Gate', confidence: 0.22,
-        speaker: 'Bot', source: '#general', timestamp: '14:01:00',
-        text: 'Daily standup reminder: please update your Jira tickets by 9 AM.',
-        status: 'suppressed', suppressReason: 'Structural Discard',
-    },
-    {
-        id: 'sig_006', label: 'Requirement', path: 'LLM', confidence: 0.79,
-        speaker: 'Raj Patel', source: '#product-requirements', timestamp: '14:06:33',
-        text: 'The API must enforce rate limiting at 1000 requests per minute per tenant, with 429 responses and Retry-After headers on breach.',
-        reasoning: 'Technical requirement with specific numeric thresholds and protocol-level detail.',
-        status: 'active',
-        humanEdited: true,
-    },
-];
+function chunkToSignal(c: Chunk & { label?: string }): SignalItem {
+    const labelRaw = (c.signal_label ?? c.label ?? '').toLowerCase();
+    const labelMap: Record<string, SignalLabel> = {
+        requirement: 'Requirement',
+        decision: 'Decision',
+        stakeholder_feedback: 'Feedback',
+        feedback: 'Feedback',
+        timeline_reference: 'Timeline',
+        timeline: 'Timeline',
+        noise: 'Noise',
+    };
+    const pathRaw = (c.classification_path ?? c.source_type ?? '').toLowerCase();
+    const pathMap: Record<string, ClassPath> = {
+        heuristic: 'Heuristic',
+        domain_gate: 'Domain Gate',
+        domain: 'Domain Gate',
+        llm: 'LLM',
+        email: 'LLM',
+        csv: 'LLM',
+        file: 'LLM',
+        slack: 'LLM',
+    };
+    const label = (labelMap[labelRaw] ?? 'Requirement') as SignalLabel;
+    const path = (pathMap[pathRaw] ?? 'LLM') as ClassPath;
+    return {
+        id: c.chunk_id,
+        label,
+        path,
+        confidence: c.confidence ?? 0,
+        speaker: c.speaker ?? 'Unknown',
+        source: c.source_ref ?? '',
+        timestamp: '',
+        text: c.cleaned_text ?? '',
+        reasoning: c.reasoning,
+        status: c.suppressed ? 'suppressed' : (c.flagged_for_review ? 'flagged' : 'active'),
+        suppressReason: c.suppressed ? 'Semantic Noise' : undefined,
+    };
+}
 
 // ─── Badge helpers ────────────────────────────────────────────────────────────
 
@@ -110,10 +105,11 @@ function ConfidenceBar({ value, size = 'sm' }: { value: number; size?: 'sm' | 'l
 
 // ─── Signal Card ──────────────────────────────────────────────────────────────
 
-function SignalCard({ signal, selected, onClick }: {
+function SignalCard({ signal, selected, onClick, onRestore }: {
     signal: SignalItem;
     selected: boolean;
     onClick: () => void;
+    onRestore?: (id: string) => void;
 }) {
     const [expanded, setExpanded] = useState(false);
     const truncated = signal.text.length > 160;
@@ -124,36 +120,27 @@ function SignalCard({ signal, selected, onClick }: {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             className={cn(
-                "glass-card rounded-xl p-4 cursor-pointer transition-all duration-200",
-                signal.status === 'suppressed' ? 'border-l-4 border-l-zinc-600/50' : 'border-l-4',
-                signal.label === 'Requirement' && signal.status !== 'suppressed' && 'border-l-blue-500/60',
-                signal.label === 'Decision' && signal.status !== 'suppressed' && 'border-l-purple-500/60',
-                signal.label === 'Feedback' && signal.status !== 'suppressed' && 'border-l-amber-500/60',
-                signal.label === 'Timeline' && signal.status !== 'suppressed' && 'border-l-emerald-500/60',
-                selected && 'border-cyan-400/50 bg-cyan-500/5',
+                "glass-card rounded-xl p-4 cursor-pointer transition-all duration-200 border-l-[3px]",
+                signal.status === 'suppressed' ? 'border-l-zinc-700/50 opacity-70' : 'border-l-transparent hover:border-l-cyan-500/50',
+                selected && 'border-l-cyan-400 bg-cyan-500/5',
             )}
             onClick={onClick}
         >
-            {/* Header */}
-            <div className="flex items-center gap-2 flex-wrap mb-2">
-                <span className={cn("glass-badge", LABEL_CLASS[signal.label])}>{signal.label}</span>
-                <span className={cn("glass-badge", PATH_CLASS[signal.path])}>{signal.path}</span>
+            <div className="flex items-center gap-2 flex-wrap mb-3">
+                <span className={cn("px-2 py-0.5 rounded-md text-[10px] font-medium border", LABEL_CLASS[signal.label])}>{signal.label}</span>
+                <span className={cn("px-2 py-0.5 rounded-md text-[10px] font-medium border", PATH_CLASS[signal.path])}>{signal.path}</span>
                 {signal.humanEdited && (
-                    <span className="glass-badge bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 flex items-center gap-1">
-                        <Lock size={8} /> Human Edited
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 flex items-center gap-1">
+                        <Lock size={8} /> Edited
                     </span>
                 )}
                 {signal.status === 'flagged' && (
-                    <span className="glass-badge badge-severity-medium">Flagged</span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium badge-severity-medium border-amber-500/30">Flagged</span>
                 )}
-                <div className="ml-auto flex items-center gap-2">
-                    <ConfidenceBar value={signal.confidence} />
-                    <span className="text-[10px] text-zinc-600">{signal.speaker}</span>
-                </div>
             </div>
 
             {/* Body */}
-            <p className="text-xs text-zinc-300 leading-relaxed">
+            <p className="text-[13px] text-zinc-300 leading-relaxed font-light">
                 {expanded || !truncated ? signal.text : signal.text.slice(0, 160) + '…'}
             </p>
             {truncated && (
@@ -173,21 +160,21 @@ function SignalCard({ signal, selected, onClick }: {
             )}
 
             {/* Footer */}
-            <div className="flex items-center gap-3 mt-3 pt-2 border-t border-white/5" onClick={e => e.stopPropagation()}>
-                <span className="font-mono text-[10px] text-zinc-600 flex-1">{signal.source} · {signal.timestamp}</span>
+            <div className="flex items-center gap-3 mt-4 pt-3 border-t border-white/5" onClick={e => e.stopPropagation()}>
+                <span className="font-mono text-[10px] text-zinc-500 flex-1 truncate">{signal.source}</span>
                 {signal.status === 'active' && !signal.humanEdited && (
-                    <button className="btn-ghost py-1 px-2 text-[11px]">Override Label</button>
+                    <button className="text-[11px] text-zinc-400 hover:text-cyan-400 transition-colors">Edit Label</button>
                 )}
                 {signal.status === 'flagged' && (
-                    <>
-                        <button className="py-1 px-2 rounded-lg text-[11px] font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors">
-                            Accept
-                        </button>
-                        <button className="btn-ghost py-1 px-2 text-[11px]">Reclassify</button>
-                    </>
+                    <button className="text-[11px] text-emerald-400 hover:text-emerald-300 transition-colors font-medium">
+                        Accept
+                    </button>
                 )}
                 {signal.status === 'suppressed' && (
-                    <button className="py-1 px-2 rounded-lg text-[11px] font-medium text-blue-300 bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors flex items-center gap-1">
+                    <button
+                        className="py-1 px-2 rounded-lg text-[11px] font-medium text-blue-300 bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors flex items-center gap-1"
+                        onClick={() => onRestore?.(signal.id)}
+                    >
                         <RotateCcw size={10} /> Restore
                     </button>
                 )}
@@ -300,6 +287,12 @@ function DetailPanel({ signal, onClose }: { signal: SignalItem; onClose: () => v
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SignalsPage() {
+    const { activeSessionId } = useSessionStore();
+    const sessionId = activeSessionId ?? '';
+
+    const [signals, setSignals] = useState<SignalItem[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [apiError, setApiError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'active' | 'suppressed'>('active');
     const [selectedSignal, setSelectedSignal] = useState<SignalItem | null>(null);
     const [sortBy, setSortBy] = useState('confidence');
@@ -308,10 +301,43 @@ export default function SignalsPage() {
     const [labelFilter, setLabelFilter] = useState<Set<string>>(new Set(['Requirement', 'Decision', 'Feedback', 'Timeline', 'Noise']));
     const [pathFilter, setPathFilter] = useState<Set<string>>(new Set(['Heuristic', 'Domain Gate', 'LLM']));
 
+    const fetchSignals = useCallback(async () => {
+        if (!sessionId) return;
+        setLoading(true);
+        setApiError(null);
+        try {
+            const [activeRes, noisyRes] = await Promise.all([
+                getChunks(sessionId, 'signal'),
+                getChunks(sessionId, 'noise'),
+            ]);
+            const active = activeRes.chunks.map(chunkToSignal);
+            const suppressed = noisyRes.chunks.map(chunkToSignal);
+            setSignals([...active, ...suppressed]);
+        } catch (e) {
+            setApiError(e instanceof Error ? e.message : 'Failed to load signals');
+        } finally {
+            setLoading(false);
+        }
+    }, [sessionId]);
+
+    useEffect(() => { fetchSignals(); }, [fetchSignals]);
+
+    const handleRestore = async (chunkId: string) => {
+        try {
+            await restoreChunk(sessionId, chunkId);
+            // Optimistically remove from suppressed list and add to active
+            setSignals(prev => prev.map(s =>
+                s.id === chunkId ? { ...s, status: 'active' as const } : s
+            ));
+        } catch (e) {
+            setApiError(e instanceof Error ? e.message : 'Restore failed');
+        }
+    };
+
     const LABELS: SignalLabel[] = ['Requirement', 'Decision', 'Feedback', 'Timeline', 'Noise'];
     const PATHS: ClassPath[] = ['Heuristic', 'Domain Gate', 'LLM'];
 
-    const filtered = SIGNALS.filter(s => {
+    const filtered = signals.filter(s => {
         if (activeTab === 'active' && s.status === 'suppressed') return false;
         if (activeTab === 'suppressed' && s.status !== 'suppressed') return false;
         if (!labelFilter.has(s.label)) return false;
@@ -319,34 +345,46 @@ export default function SignalsPage() {
         return true;
     });
 
-    const total = SIGNALS.filter(s => s.status !== 'suppressed').length;
-    const autoAccepted = SIGNALS.filter(s => s.status === 'active').length;
-    const flagged = SIGNALS.filter(s => s.status === 'flagged').length;
-    const suppressed = SIGNALS.filter(s => s.status === 'suppressed').length;
-    const meanConf = SIGNALS.filter(s => s.status !== 'suppressed').reduce((a, b) => a + b.confidence, 0) / total;
+    const total = signals.filter(s => s.status !== 'suppressed').length;
+    const autoAccepted = signals.filter(s => s.status === 'active').length;
+    const flagged = signals.filter(s => s.status === 'flagged').length;
+    const suppressed = signals.filter(s => s.status === 'suppressed').length;
+    const meanConf = total > 0 ? signals.filter(s => s.status !== 'suppressed').reduce((a, b) => a + b.confidence, 0) / total : 0;
     const autoAccPct = Math.round((autoAccepted / total) * 100);
 
     const toggleLabel = (l: string) => setLabelFilter(prev => { const n = new Set(prev); n.has(l) ? n.delete(l) : n.add(l); return n; });
     const togglePath = (p: string) => setPathFilter(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n; });
 
-    const LABEL_COUNT = (l: SignalLabel) => SIGNALS.filter(s => s.label === l).length;
+    const LABEL_COUNT = (l: SignalLabel) => signals.filter(s => s.label === l).length;
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
+            {/* Error banner */}
+            {apiError && (
+                <div className="px-5 py-2 bg-red-500/10 border-b border-red-500/20 text-xs text-red-300">
+                    ⚠ {apiError} — <button onClick={fetchSignals} className="underline">Retry</button>
+                </div>
+            )}
             {/* S3-07 Calibration Stats Bar */}
             <div className="px-5 py-2.5 border-b border-white/8 flex items-center gap-4 flex-wrap text-[11px] glass-topbar">
-                <span className="text-zinc-500">{total} classified</span>
-                <span className="text-zinc-600">·</span>
-                <span className={autoAccPct > 90 ? 'text-amber-300 flex items-center gap-1' : 'text-emerald-400'}>
-                    {autoAccPct > 90 && <AlertTriangle size={10} />}
-                    {autoAccPct}% auto-accepted
-                </span>
-                <span className="text-zinc-600">·</span>
-                <span className="text-amber-300">{flagged} flagged</span>
-                <span className="text-zinc-600">·</span>
-                <span className="text-zinc-500">{suppressed} suppressed</span>
-                <span className="text-zinc-600">·</span>
-                <span className="text-zinc-500">mean conf <span className="font-mono text-zinc-300">{Math.round(meanConf * 100)}%</span></span>
+                {loading ? (
+                    <span className="flex items-center gap-1.5 text-zinc-500"><Loader2 size={10} className="animate-spin" /> Loading signals…</span>
+                ) : (
+                    <>
+                        <span className="text-zinc-500">{total} classified</span>
+                        <span className="text-zinc-600">·</span>
+                        <span className={autoAccPct > 90 ? 'text-amber-300 flex items-center gap-1' : 'text-emerald-400'}>
+                            {autoAccPct > 90 && <AlertTriangle size={10} />}
+                            {autoAccPct}% auto-accepted
+                        </span>
+                        <span className="text-zinc-600">·</span>
+                        <span className="text-amber-300">{flagged} flagged</span>
+                        <span className="text-zinc-600">·</span>
+                        <span className="text-zinc-500">{suppressed} suppressed</span>
+                        <span className="text-zinc-600">·</span>
+                        <span className="text-zinc-500">mean conf <span className="font-mono text-zinc-300">{Math.round(meanConf * 100)}%</span></span>
+                    </>
+                )}
             </div>
 
             <div className="flex flex-1 overflow-hidden">
@@ -357,12 +395,12 @@ export default function SignalsPage() {
                         <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">Label</p>
                         <div className="space-y-1">
                             {LABELS.map(l => (
-                                <label key={l} className="flex items-center gap-2 py-1 cursor-pointer group">
+                                <label key={l} className="flex items-center gap-2.5 py-1.5 cursor-pointer group">
                                     <input
                                         type="checkbox" checked={labelFilter.has(l)} onChange={() => toggleLabel(l)}
-                                        className="accent-cyan-400 w-3 h-3"
+                                        className="accent-zinc-500 w-3.5 h-3.5 bg-transparent border-white/20 rounded"
                                     />
-                                    <span className={cn("text-xs flex-1 transition-colors", labelFilter.has(l) ? 'text-zinc-300' : 'text-zinc-600')}>
+                                    <span className={cn("text-xs flex-1 transition-colors", labelFilter.has(l) ? 'text-zinc-200 font-medium' : 'text-zinc-500')}>
                                         {l}
                                     </span>
                                     <span className="text-[10px] text-zinc-600">({LABEL_COUNT(l)})</span>
@@ -376,12 +414,12 @@ export default function SignalsPage() {
                         <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">Path</p>
                         <div className="space-y-1">
                             {PATHS.map(p => (
-                                <label key={p} className="flex items-center gap-2 py-1 cursor-pointer">
+                                <label key={p} className="flex items-center gap-2.5 py-1.5 cursor-pointer group">
                                     <input
                                         type="checkbox" checked={pathFilter.has(p)} onChange={() => togglePath(p)}
-                                        className="accent-cyan-400 w-3 h-3"
+                                        className="accent-zinc-500 w-3.5 h-3.5 bg-transparent border-white/20 rounded"
                                     />
-                                    <span className={cn("text-xs transition-colors", pathFilter.has(p) ? 'text-zinc-300' : 'text-zinc-600')}>{p}</span>
+                                    <span className={cn("text-xs flex-1 transition-colors", pathFilter.has(p) ? 'text-zinc-200 font-medium' : 'text-zinc-500')}>{p}</span>
                                 </label>
                             ))}
                         </div>
@@ -440,6 +478,7 @@ export default function SignalsPage() {
                                         signal={signal}
                                         selected={selectedSignal?.id === signal.id}
                                         onClick={() => setSelectedSignal(selectedSignal?.id === signal.id ? null : signal)}
+                                        onRestore={handleRestore}
                                     />
                                 ))}
                             </AnimatePresence>

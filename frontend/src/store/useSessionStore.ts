@@ -1,16 +1,18 @@
 /**
- * useSessionStore — persists the list of BRD sessions to localStorage.
- * This is separate from useBRDStore which handles BRD section content.
+ * useSessionStore.ts
+ * Persists the active session ID + session list to localStorage (Problem 6 fix).
+ * Creates real sessions via the FastAPI backend.
  */
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { createSession, type Session } from '@/lib/apiClient';
 
 export interface BRDSession {
     id: string;
     name: string;
     description: string;
     status: 'active' | 'complete' | 'draft';
-    createdAt: string; // ISO string
+    createdAt: string;
     sections?: number;
     signals?: number;
     words?: number;
@@ -19,46 +21,46 @@ export interface BRDSession {
 interface SessionStore {
     sessions: BRDSession[];
     activeSessionId: string | null;
-    addSession: (session: Omit<BRDSession, 'createdAt'>) => void;
+    loading: boolean;
+    error: string | null;
+    /** Create a new session in the backend, add it to the local list, and set as active. */
+    addSession: (name: string, description: string) => Promise<string>;
     setActive: (id: string) => void;
     updateSession: (id: string, patch: Partial<Omit<BRDSession, 'id'>>) => void;
     removeSession: (id: string) => void;
 }
 
-const SEED: BRDSession[] = [
-    {
-        id: 'sess_02a9fe3c',
-        name: 'Hackfest Demo Session',
-        description: 'Live demo BRD for Hackfest 2.0',
-        status: 'active',
-        createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        sections: 7, signals: 183, words: 2840,
-    },
-    {
-        id: 'sess_01b7aa2d',
-        name: 'Project Alpha Kickoff',
-        description: 'Initial requirements for Alpha launch',
-        status: 'complete',
-        createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-        sections: 7, signals: 124, words: 2210,
-    },
-];
-
 export const useSessionStore = create<SessionStore>()(
     persist(
         (set, get) => ({
-            sessions: SEED,
-            activeSessionId: SEED[0].id,
+            sessions: [],
+            activeSessionId: null,
+            loading: false,
+            error: null,
 
-            addSession: (session) => {
-                const newSession: BRDSession = {
-                    ...session,
-                    createdAt: new Date().toISOString(),
-                };
-                set((state) => ({
-                    sessions: [newSession, ...state.sessions],
-                    activeSessionId: newSession.id,
-                }));
+            addSession: async (name, description) => {
+                set({ loading: true, error: null });
+                try {
+                    const res: Session = await createSession();
+                    const newSession: BRDSession = {
+                        id: res.session_id,
+                        name,
+                        description,
+                        status: 'active',
+                        createdAt: new Date().toISOString(),
+                    };
+                    set((state) => ({
+                        sessions: [newSession, ...state.sessions],
+                        activeSessionId: newSession.id,
+                    }));
+                    return newSession.id;
+                } catch (e) {
+                    const msg = e instanceof Error ? e.message : 'Failed to create session';
+                    set({ error: msg });
+                    throw new Error(msg);
+                } finally {
+                    set({ loading: false });
+                }
             },
 
             setActive: (id) => set({ activeSessionId: id }),
@@ -82,7 +84,7 @@ export const useSessionStore = create<SessionStore>()(
             },
         }),
         {
-            name: 'ps21-brd-sessions',
+            name: 'ps21-brd-sessions', // localStorage key — survives page refresh
             storage: createJSONStorage(() => localStorage),
         }
     )

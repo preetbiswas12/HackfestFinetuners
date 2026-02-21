@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
     CheckCircle2, AlertCircle, ArrowRight, Download, FileText,
-    File, Table2, Eye, Clock, Hash, Database
+    File, Table2, Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { exportBRD } from '@/lib/apiClient';
+import { useSessionStore } from '@/store/useSessionStore';
 
 // ─── Mock checklist ───────────────────────────────────────────────────────────
 
@@ -27,41 +29,70 @@ const CHECKLIST: CheckItem[] = [
     { id: 'c5', label: 'Session has a name', description: 'Session: "Hackfest Demo Session"', status: 'ok' },
 ];
 
+type ExportFormat = 'markdown' | 'docx';
+
 const FORMAT_CARDS = [
     {
-        id: 'md', label: 'Markdown', icon: <FileText size={22} className="text-zinc-300" />,
+        id: 'markdown' as ExportFormat,
+        label: 'Markdown',
+        icon: <FileText size={22} className="text-zinc-300" />,
         desc: 'Raw content, no styling. All sections, metadata footer.',
         sub: 'Plain .md file',
-        disabled: false,
     },
     {
-        id: 'pdf', label: 'PDF', icon: <File size={22} className="text-red-300" />,
-        desc: 'Styled document with cover page, section headers, validation appendix.',
-        sub: 'Styled with WeasyPrint',
-        disabled: false,
-    },
-    {
-        id: 'docx', label: 'DOCX', icon: <Table2 size={22} className="text-blue-300" />,
+        id: 'docx' as ExportFormat,
+        label: 'DOCX',
+        icon: <Table2 size={22} className="text-blue-300" />,
         desc: 'Template-based layout with table of contents and figure captions.',
         sub: 'Template-based layout',
-        disabled: false,
     },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ExportPage() {
+    const { activeSessionId } = useSessionStore();
+    const sessionId = activeSessionId ?? '';
+
     const [proceedAnyway, setProceedAnyway] = useState(false);
+    const [downloading, setDownloading] = useState<ExportFormat | null>(null);
+    const [exportError, setExportError] = useState<string | null>(null);
 
     const allOk = CHECKLIST.every(c => c.status === 'ok') || proceedAnyway;
     const warnCount = CHECKLIST.filter(c => c.status === 'warn').length;
+
+    const handleExport = async (format: ExportFormat) => {
+        if (!sessionId) {
+            setExportError('No active session. Go to Dashboard to create one.');
+            return;
+        }
+        setDownloading(format);
+        setExportError(null);
+        try {
+            await exportBRD(sessionId, format);
+        } catch (e) {
+            setExportError(e instanceof Error ? e.message : 'Export failed');
+        } finally {
+            setDownloading(null);
+        }
+    };
 
     return (
         <div className="p-6 space-y-6 max-w-5xl">
             <div>
                 <h1 className="text-2xl font-bold text-zinc-100">Export BRD</h1>
-                <p className="text-sm text-zinc-500 mt-0.5">Review and download your Business Requirements Document</p>
+                <p className="text-sm text-zinc-500 mt-0.5">
+                    Review and download your Business Requirements Document
+                    {sessionId && <span className="font-mono text-zinc-600"> · {sessionId.slice(0, 8)}</span>}
+                </p>
             </div>
+
+            {/* Error banner */}
+            {exportError && (
+                <div className="px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300">
+                    ⚠ {exportError}
+                </div>
+            )}
 
             {/* S5-01 Pre-Export Checklist */}
             <motion.div
@@ -119,10 +150,8 @@ export default function ExportPage() {
                 className="glass-card rounded-xl p-5"
             >
                 <h2 className="text-sm font-semibold text-zinc-200 mb-4">Document Preview</h2>
-                {/* Static template illustration */}
                 <div className="flex gap-5 items-start">
                     <div className="w-48 flex-shrink-0 rounded-lg border border-white/10 bg-white/4 p-4 space-y-2.5">
-                        {/* Cover page mockup */}
                         <div className="h-2 rounded bg-gradient-to-r from-cyan-500/40 to-purple-500/40 w-3/4" />
                         <div className="h-1 rounded bg-white/10 w-1/2" />
                         <div className="mt-3 space-y-1">
@@ -151,37 +180,43 @@ export default function ExportPage() {
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.18 }}
             >
                 <h2 className="text-sm font-semibold text-zinc-200 mb-3">Export Format</h2>
-                <div className="grid md:grid-cols-3 gap-4">
-                    {FORMAT_CARDS.map((fmt, i) => (
-                        <motion.div
-                            key={fmt.id}
-                            initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 + i * 0.07 }}
-                            className="glass-card rounded-xl p-5 flex flex-col gap-4"
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center">
-                                    {fmt.icon}
-                                </div>
-                                <div>
-                                    <p className="text-sm font-semibold text-zinc-100">{fmt.label}</p>
-                                    <p className="text-[10px] text-zinc-600">{fmt.sub}</p>
-                                </div>
-                            </div>
-                            <p className="text-xs text-zinc-400 leading-relaxed flex-1">{fmt.desc}</p>
-                            <button
-                                disabled={!allOk}
-                                className={cn(
-                                    "w-full flex items-center justify-center gap-2 text-sm py-2.5 rounded-lg font-medium transition-all",
-                                    allOk
-                                        ? "btn-primary"
-                                        : "bg-white/5 text-zinc-600 border border-white/8 cursor-not-allowed"
-                                )}
+                <div className="grid md:grid-cols-2 gap-4">
+                    {FORMAT_CARDS.map((fmt, i) => {
+                        const isDownloading = downloading === fmt.id;
+                        const disabled = !allOk || !sessionId || isDownloading;
+                        return (
+                            <motion.div
+                                key={fmt.id}
+                                initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 + i * 0.07 }}
+                                className="glass-card rounded-xl p-5 flex flex-col gap-4"
                             >
-                                <Download size={14} />
-                                Download {fmt.label}
-                            </button>
-                        </motion.div>
-                    ))}
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center">
+                                        {fmt.icon}
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-semibold text-zinc-100">{fmt.label}</p>
+                                        <p className="text-[10px] text-zinc-600">{fmt.sub}</p>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-zinc-400 leading-relaxed flex-1">{fmt.desc}</p>
+                                <button
+                                    disabled={disabled}
+                                    onClick={() => handleExport(fmt.id)}
+                                    className={cn(
+                                        "w-full flex items-center justify-center gap-2 text-sm py-2.5 rounded-lg font-medium transition-all",
+                                        disabled
+                                            ? "bg-white/5 text-zinc-600 border border-white/8 cursor-not-allowed"
+                                            : "btn-primary"
+                                    )}
+                                >
+                                    {isDownloading
+                                        ? <><Loader2 size={14} className="animate-spin" /> Exporting…</>
+                                        : <><Download size={14} /> Download {fmt.label}</>}
+                                </button>
+                            </motion.div>
+                        );
+                    })}
                 </div>
             </motion.div>
 
@@ -193,11 +228,10 @@ export default function ExportPage() {
                 <h2 className="text-sm font-semibold text-zinc-200 mb-4">Export Metadata</h2>
                 <div className="grid md:grid-cols-2 gap-4 text-xs">
                     {[
-                        ['Session ID', 'sess_02a9fe3c'],
-                        ['Export Timestamp', '21 Feb 2026 · 14:15:00 IST'],
-                        ['Sections Included', '7 sections (v1–v2)'],
-                        ['Total Source Signals', '183 classified'],
-                        ['Validation Flags', '3 total · 2 unacknowledged'],
+                        ['Session ID', sessionId || '—'],
+                        ['Export Timestamp', new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })],
+                        ['Sections Included', '7 sections'],
+                        ['Validation Flags', `${warnCount} issues`],
                     ].map(([k, v]) => (
                         <div key={k} className="flex items-start gap-3">
                             <span className="text-zinc-600 flex-shrink-0 w-36">{k}</span>
