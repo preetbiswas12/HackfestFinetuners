@@ -399,120 +399,91 @@ function PrimaryBtn({ href, children }: { href: string; children: React.ReactNod
 
 /* ─── Footer ───────────────────────────────────────────────────────────────── */
 function Footer() {
-    const footerLinks = {
-        Product: [
-            { label: 'Dashboard', href: '/login' },
-            { label: 'Source Ingestion', href: '/login' },
-            { label: 'Signal Review', href: '/login' },
-            { label: 'BRD Draft', href: '/login' },
-            { label: 'Export', href: '/login' },
-            { label: 'Settings', href: '/login' },
-        ],
-        Pipeline: [
-            { label: 'Ingestion', href: '#architecture' },
-            { label: 'Noise Filter', href: '#architecture' },
-            { label: 'Classification', href: '#architecture' },
-            { label: 'Generation', href: '#architecture' },
-            { label: 'Validation', href: '#architecture' },
-            { label: 'Export', href: '#architecture' },
-        ],
-        'Built With': [
-            { label: 'Next.js 14', href: 'https://nextjs.org' },
-            { label: 'Groq LLM', href: 'https://groq.com' },
-            { label: 'FastAPI', href: 'https://fastapi.tiangolo.com' },
-            { label: 'PostgreSQL', href: 'https://postgresql.org' },
-            { label: 'Framer Motion', href: 'https://framer.com/motion' },
-            { label: 'Supabase', href: 'https://supabase.com' },
-        ],
-    };
-
     return (
-        <footer style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="max-w-6xl mx-auto px-6 pt-16 pb-10">
-                {/* Main grid */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-10 mb-14">
-                    {/* Brand — 2 cols */}
-                    <div className="col-span-2 space-y-5">
-                        <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-lg bg-white/8 border border-white/14 flex items-center justify-center">
-                                <Zap size={14} className="text-white" />
-                            </div>
-                            <div>
-                                <p className="text-sm font-bold text-white leading-none">Beacon</p>
-                                <p className="text-[10px] text-zinc-600 mt-0.5">Hackfest 2.0</p>
-                            </div>
+        <footer className="w-full bg-[#09090B] text-white px-6 py-16 flex flex-col items-center justify-center text-sm relative overflow-hidden">
+            {/* Top Section */}
+            <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-4 gap-12 text-left mb-20">
+                {/* Left Column - Brand (wider) */}
+                <div className="md:col-span-2 flex flex-col gap-6">
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-white/8 border border-white/14 flex items-center justify-center flex-shrink-0">
+                            <Zap size={14} className="text-white" />
                         </div>
-                        <p className="text-sm text-zinc-500 leading-relaxed max-w-xs">
-                            AI-powered pipeline that transforms Slack threads, emails, and documents
-                            into structured, validated Business Requirements Documents — in under 5 minutes.
-                        </p>
-                        {/* Status */}
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full"
-                            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" style={{ boxShadow: '0 0 5px rgba(74,222,128,0.5)' }} />
-                            <span className="text-xs text-zinc-500">All systems operational</span>
-                        </div>
-                        {/* Contact */}
-                        <div className="flex items-center gap-4 pt-1">
-                            <a href="https://github.com" target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-300 transition-colors">
-                                <Github size={13} /> GitHub
-                            </a>
-                            <a href="mailto:team@beacon.ai"
-                                className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-300 transition-colors">
-                                <Mail size={13} /> Contact
-                            </a>
-                        </div>
+                        <span className="font-semibold text-white text-base">Beacon</span>
+                    </div>
+                    <p className="text-zinc-300 text-sm leading-relaxed max-w-sm">
+                        Beacon is an AI-powered platform designed to help product teams generate
+                        complete Business Requirements Documents by intelligently processing Slack threads,
+                        emails, and documents — in under 5 minutes.
+                    </p>
+
+                    {/* Blinking Status */}
+                    <div className="flex items-center gap-2 mt-2">
+                        <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                        </span>
+                        <span className="text-white text-xs">All systems online</span>
                     </div>
 
-                    {/* Link columns */}
-                    {Object.entries(footerLinks).map(([title, links]) => (
-                        <div key={title}>
-                            <h4 className="text-[10px] font-mono text-zinc-700 tracking-widest uppercase mb-4">{title}</h4>
-                            <ul className="space-y-2.5">
-                                {links.map(({ label, href }) => (
-                                    <li key={label}>
-                                        {href.startsWith('http') ? (
-                                            <a href={href} target="_blank" rel="noopener noreferrer"
-                                                className="text-sm text-zinc-600 hover:text-zinc-300 transition-colors inline-flex items-center gap-1">
-                                                {label} <ExternalLink size={9} />
-                                            </a>
-                                        ) : (
-                                            <Link href={href} className="text-sm text-zinc-600 hover:text-zinc-300 transition-colors">{label}</Link>
-                                        )}
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    ))}
+                    <p className="text-gray-600 text-xs mt-4">
+                        © {new Date().getFullYear()} Beacon. All rights reserved.
+                    </p>
                 </div>
 
-                {/* Pipeline stage visual */}
-                <div className="flex items-center gap-0 mb-10 overflow-x-auto">
-                    {STAGES.map((s, i) => (
-                        <div key={s.id} className="flex items-center flex-shrink-0">
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg"
-                                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                <div className="w-1.5 h-1.5 rounded-full"
-                                    style={{ background: s.status === 'complete' ? '#4ade80' : s.status === 'running' ? '#facc15' : 'rgba(255,255,255,0.15)' }} />
-                                <span className="text-[10px] font-mono text-zinc-700">{s.label}</span>
-                            </div>
-                            {i < STAGES.length - 1 && <div className="w-4 h-px mx-0.5" style={{ background: 'rgba(255,255,255,0.06)' }} />}
-                        </div>
-                    ))}
-                </div>
-
-                {/* Bottom bar */}
-                <div className="flex items-center justify-between flex-wrap gap-4 pt-6"
-                    style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="text-xs text-zinc-700">© 2025 Beacon. Built for Hackfest 2.0.</span>
-                    <div className="flex items-center gap-6">
-                        {['Privacy Policy', 'Terms of Use', 'AI Disclaimer'].map(l => (
-                            <span key={l} className="text-xs text-zinc-700 hover:text-zinc-500 cursor-pointer transition-colors">{l}</span>
+                {/* Middle Column - Product Links */}
+                <div className="flex flex-col gap-4">
+                    <h4 className="text-[10px] font-mono text-zinc-600 tracking-widest uppercase font-bold">Product</h4>
+                    <ul className="space-y-3 flex flex-col">
+                        {[
+                            { label: 'Dashboard', href: '/dashboard' },
+                            { label: 'Source Ingestion', href: '/ingestion' },
+                            { label: 'Signal Review', href: '/signals' },
+                            { label: 'BRD Editor', href: '/brd' },
+                            { label: 'Export', href: '/export' },
+                            { label: 'Settings', href: '/settings' },
+                        ].map(({ label, href }) => (
+                            <li key={label}>
+                                <Link href={href} className="text-sm text-zinc-400 hover:text-zinc-100 transition-colors">
+                                    {label}
+                                </Link>
+                            </li>
                         ))}
-                    </div>
+                    </ul>
+                </div>
+
+                {/* Right Column - Resources Links */}
+                <div className="flex flex-col gap-4">
+                    <h4 className="text-[10px] font-mono text-zinc-600 tracking-widest uppercase font-bold">Resources</h4>
+                    <ul className="space-y-3 flex flex-col">
+                        {[
+                            { label: 'Documentation', href: 'https://docs.beacon.ai' },
+                            { label: 'GitHub', href: 'https://github.com' },
+                            { label: 'Contact', href: 'mailto:team@beacon.ai' },
+                            { label: 'Privacy Policy', href: '#' },
+                            { label: 'Terms of Use', href: '#' },
+                            { label: 'AI Disclaimer', href: '#' },
+                        ].map(({ label, href }) => (
+                            <li key={label}>
+                                <a 
+                                    href={href} 
+                                    target={href.startsWith('http') || href.startsWith('mailto') ? '_blank' : undefined}
+                                    rel={href.startsWith('http') ? 'noopener noreferrer' : undefined}
+                                    className="text-sm text-zinc-400 hover:text-zinc-100 transition-colors inline-flex items-center gap-1"
+                                >
+                                    {label}
+                                    {(href.startsWith('http') && !href.includes('github')) && <ExternalLink size={9} />}
+                                </a>
+                            </li>
+                        ))}
+                    </ul>
                 </div>
             </div>
+
+            {/* Giant BG Title Watermark */}
+            <h1 className="absolute top-2/3 left-[48%] -translate-x-1/2 -translate-y-1/2 text-[14rem] md:text-[18rem] lg:text-[20rem] font-black text-white/[0.03] select-none pointer-events-none leading-none whitespace-nowrap">
+                Beacon
+            </h1>
         </footer>
     );
 }
