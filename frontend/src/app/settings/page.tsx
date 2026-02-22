@@ -6,6 +6,7 @@ import { Eye, EyeOff, RefreshCw, CheckCircle2, AlertCircle, Trash2, Edit2, Plus,
 import { cn } from '@/lib/utils';
 import { useSessionStore } from '@/store/useSessionStore';
 import NewBRDModal from '@/components/ui/NewBRDModal';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Card wrapper ─────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ function ConfidenceDiagram({ accept, lower }: { accept: number; lower: number })
 
 export default function SettingsPage() {
     const { sessions, removeSession, updateSession, setActive } = useSessionStore();
+    const { user } = useAuth();
     const [hasHydrated, setHasHydrated] = useState(false);
 
     const [showKey, setShowKey] = useState(false);
@@ -286,7 +288,7 @@ export default function SettingsPage() {
                                 disabled={deleteName !== sessions.find(s => s.id === deleteConfirm)?.name}
                                 className={cn('btn-danger text-sm py-2 px-3', deleteName !== sessions.find(s => s.id === deleteConfirm)?.name && 'opacity-40 cursor-not-allowed')}
                                 onClick={() => {
-                                    removeSession(deleteConfirm);
+                                    if (user) removeSession(deleteConfirm, user.uid);
                                     setDeleteConfirm(null);
                                     setDeleteName('');
                                 }}

@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/store/useAuthStore';
+import { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Zap } from 'lucide-react';
 
-export default function LoginPage() {
+function LoginContent() {
     const router = useRouter();
-    const login = useAuthStore((state) => state.login);
+    const searchParams = useSearchParams();
+    const { login } = useAuth();
+
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -19,12 +21,18 @@ export default function LoginPage() {
         setError('');
         setLoading(true);
 
-        const success = await login(email, password);
-
-        if (success) {
-            router.push('/dashboard');
-        } else {
-            setError('Invalid credentials. Please try again.');
+        try {
+            await login(email, password);
+            // Set session cookie for middleware route protection
+            await fetch('/api/auth/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'login' }),
+            });
+            const redirect = searchParams.get('redirect') || '/dashboard';
+            router.push(redirect);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
             setLoading(false);
         }
     };
@@ -79,13 +87,22 @@ export default function LoginPage() {
                             onChange={(e) => setEmail(e.target.value)}
                             className="glass-input w-full px-4 py-3 text-sm"
                             placeholder="you@company.com"
+                            autoComplete="email"
                         />
                     </div>
 
                     <div className="space-y-1.5">
-                        <label className="block text-sm font-medium text-zinc-300">
-                            Password
-                        </label>
+                        <div className="flex items-center justify-between">
+                            <label className="block text-sm font-medium text-zinc-300">
+                                Password
+                            </label>
+                            <Link
+                                href="/forgot-password"
+                                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                            >
+                                Forgot password?
+                            </Link>
+                        </div>
                         <input
                             type="password"
                             required
@@ -93,6 +110,7 @@ export default function LoginPage() {
                             onChange={(e) => setPassword(e.target.value)}
                             className="glass-input w-full px-4 py-3 text-sm"
                             placeholder="••••••••"
+                            autoComplete="current-password"
                         />
                     </div>
 
@@ -113,10 +131,25 @@ export default function LoginPage() {
                     </button>
 
                     <p className="text-center text-xs text-zinc-600 pt-1">
-                        Demo mode — any email + password works
+                        Don&apos;t have an account?{' '}
+                        <Link href="/register" className="text-zinc-400 hover:text-white transition-colors">
+                            Sign up
+                        </Link>
                     </p>
                 </form>
             </div>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
+                <Loader2 size={24} className="animate-spin text-zinc-500" />
+            </div>
+        }>
+            <LoginContent />
+        </Suspense>
     );
 }

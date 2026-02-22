@@ -8,8 +8,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Drawer from '@/components/ui/Drawer';
-import { uploadFile, ingestDemoDataset, getChunks, type Chunk } from '@/lib/apiClient';
+import { uploadFile, ingestDemoDataset, getChunks, createSession, type Chunk } from '@/lib/apiClient';
 import { useSessionStore } from '@/store/useSessionStore';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Static Connector Data ────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ interface UploadedFile {
 
 export default function IngestionPage() {
     const { activeSessionId, addSession } = useSessionStore();
+    const { user } = useAuth();
     const sessionId = activeSessionId ?? '';
 
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -149,8 +151,14 @@ export default function IngestionPage() {
         try {
             // Auto-create a session if one doesn't exist yet
             let sid = sessionId;
-            if (!sid) {
-                sid = await addSession('Demo Session', 'Auto-created for Enron demo dataset');
+            if (!sid && user) {
+                try {
+                    const res = await createSession();
+                    sid = res.session_id;
+                } catch {
+                    sid = `sess_${crypto.randomUUID().slice(0, 8)}`;
+                }
+                await addSession('Demo Session', 'Auto-created for Enron demo dataset', user.uid, sid);
             }
             const res = await ingestDemoDataset(sid, 200);
             clearInterval(interval);
